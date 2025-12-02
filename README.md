@@ -1,6 +1,14 @@
 # M4: Many Medical Datasets ↔ MCP ↔ Models 🏥🤖
 
-> **Query tabular PhysioNet medical data using natural language through MCP clients**
+
+
+<p align="center">
+  <img src="webapp/public/m4_logo_transparent.png" alt="M4 Logo" width="200"/>
+</p>
+
+**Query tabular PhysioNet medical data using natural language through MCP clients**
+
+
 
 <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white"></a>
 <a href="https://modelcontextprotocol.io/"><img alt="MCP" src="https://img.shields.io/badge/MCP-Compatible-green?logo=ai&logoColor=white"></a>
@@ -9,6 +17,9 @@
 <a href="https://github.com/hannesill/m4/pulls"><img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
 
 Transform medical data analysis with AI! Ask questions about MIMIC-IV and other PhysioNet datasets in plain English and get instant insights. Choose between local data (free) or full cloud dataset (BigQuery).
+
+> **🫶 M4 is built upon M3.** \
+> Please acknowledge the original authors and [cite](#contributing--citation) their work.
 
 ## 💡 How It Works
 
@@ -320,6 +331,9 @@ We welcome contributions!
 3.  **Submit:** Open a Pull Request with your changes.
 
 **Citation:**
+
+M4 is built upon M3. Please cite the original work:
+
 ```bibtex
 @article{attrach2025conversational,
   title={Conversational LLMs Simplify Secure Clinical Data Access, Understanding, and Analysis},
