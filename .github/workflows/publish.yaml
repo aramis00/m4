@@ -36,7 +36,7 @@ jobs:
     - name: Update version in __init__.py
       run: |
         # Update version in src/m4/__init__.py to match the git tag
-        sed -i "s/__version__ = \".*\"/__version__ = \"${{ steps.get_version.outputs.version }}\"/" src/m4/__init__.py
+        sed -i "s|__version__ = \".*\"|__version__ = \"${{ steps.get_version.outputs.version }}\"|" src/m4/__init__.py
         echo "Updated src/m4/__init__.py version to ${{ steps.get_version.outputs.version }}"
         grep "__version__" src/m4/__init__.py
 
