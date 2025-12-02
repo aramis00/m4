@@ -15,7 +15,7 @@ FROM python:3.11-slim AS base
 
 ENV PYTHONUNBUFFERED=1 \
     M4_BACKEND=duckdb \
-    M4_DB_PATH=/root/m4_data/databases/mimic_iv_demo.db
+    M4_DB_PATH=/app/m4_data/databases/mimic_iv_demo.duckdb
 
 WORKDIR /app
 

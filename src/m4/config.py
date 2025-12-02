@@ -21,20 +21,52 @@ logger = logging.getLogger(APP_NAME)
 # -------------------------------------------------------------------
 # Data directory rooted at project root (two levels up from this file)
 # -------------------------------------------------------------------
+def _find_project_root_from_cwd() -> Path:
+    """
+    Search upwards from CWD for a valid 'm4_data' directory.
+    If found (and looks like an m4 data dir), return its parent.
+    Otherwise return CWD.
+    """
+    cwd = Path.cwd()
+    for path in [cwd, *cwd.parents]:
+        data_dir = path / "m4_data"
+        if data_dir.exists() and data_dir.is_dir():
+            # Check for characteristic m4 data artifacts to avoid false positives
+            if (
+                (data_dir / "config.json").exists()
+                or (data_dir / "databases").exists()
+                or (data_dir / "parquet").exists()
+                or (data_dir / "datasets").exists()
+                or (data_dir / "raw_files").exists()
+            ):
+                return path
+    return cwd
+
+
 def _get_project_root() -> Path:
     """
     Determine project root:
-    - If cloned repo: use repository root (two levels up from this file)
-    - If pip installed: ALWAYS use home directory
+    - Priority 1: M4_DATA_DIR environment variable (use parent of specified data dir)
+    - Priority 2: If cloned repo: use repository root (two levels up from this file)
+    - Priority 3: If pip installed: Search upwards from CWD for existing 'm4_data' directory, or use CWD.
     """
+    # Check for explicit data directory override
+    env_data_dir = os.getenv("M4_DATA_DIR")
+    if env_data_dir:
+        data_path = Path(env_data_dir).resolve()
+        if data_path.exists():
+            return data_path.parent
+        # If specified but doesn't exist, use its parent anyway (will be created)
+        return data_path.parent
+
     package_root = Path(__file__).resolve().parents[2]
 
     # Check if we're in a cloned repository (has pyproject.toml at root)
     if (package_root / "pyproject.toml").exists():
         return package_root
 
-    # Pip installed: ALWAYS use home directory (simple and consistent)
-    return Path.home()
+    # Pip installed: Search for project root
+    return _find_project_root_from_cwd()
 
 
 _PROJECT_ROOT = _get_project_root()

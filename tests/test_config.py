@@ -38,3 +38,32 @@ def test_raw_path_includes_dataset_name(tmp_path, monkeypatch):
     monkeypatch.setattr(cfg_mod, "_DEFAULT_PARQUET_DIR", tmp_path / "parquet")
     raw_path = get_dataset_parquet_root("mimic-iv-demo")
     assert "mimic-iv-demo" in str(raw_path)
+
+
+def test_find_project_root_search(tmp_path, monkeypatch):
+    from m4.config import _find_project_root_from_cwd
+
+    # Case 1: No data dir -> returns cwd
+    with monkeypatch.context() as m:
+        m.chdir(tmp_path)
+        assert _find_project_root_from_cwd() == tmp_path
+
+    # Case 2: Data dir exists but empty (invalid) -> returns cwd
+    data_dir = tmp_path / "m4_data"
+    data_dir.mkdir()
+    with monkeypatch.context() as m:
+        m.chdir(tmp_path)
+        assert _find_project_root_from_cwd() == tmp_path
+
+    # Case 3: Valid data dir (has databases/) -> returns root
+    (data_dir / "databases").mkdir()
+    with monkeypatch.context() as m:
+        m.chdir(tmp_path)
+        assert _find_project_root_from_cwd() == tmp_path
+
+    # Case 4: Valid data dir -> returns root from subdir
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    with monkeypatch.context() as m:
+        m.chdir(subdir)
+        assert _find_project_root_from_cwd() == tmp_path

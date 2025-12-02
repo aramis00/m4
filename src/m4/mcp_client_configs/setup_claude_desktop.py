@@ -42,9 +42,16 @@ def get_claude_config_path():
 def get_current_directory():
     """Get the current M4 project directory."""
     p = Path(__file__).resolve()
-    while p != p.parent and not (p / "pyproject.toml").exists():
-        p = p.parent
-    return p
+
+    # Try to find pyproject.toml
+    search_p = p
+    while search_p != search_p.parent:
+        if (search_p / "pyproject.toml").exists():
+            return search_p
+        search_p = search_p.parent
+
+    # If installed as package and no pyproject.toml found, use CWD
+    return Path.cwd()
 
 
 def get_python_path():
@@ -59,6 +66,25 @@ def get_python_path():
     return shutil.which("python") or shutil.which("python3") or "python"
 
 
+def find_m4_data_dir(working_directory: Path) -> Path:
+    """Find the actual m4_data directory by searching upward from working_directory."""
+    cwd = working_directory.resolve()
+    for path in [cwd, *cwd.parents]:
+        data_dir = path / "m4_data"
+        if data_dir.exists() and data_dir.is_dir():
+            # Check for characteristic m4 data artifacts
+            if (
+                (data_dir / "config.json").exists()
+                or (data_dir / "databases").exists()
+                or (data_dir / "parquet").exists()
+                or (data_dir / "datasets").exists()
+                or (data_dir / "raw_files").exists()
+            ):
+                return data_dir
+    # If not found, return the default location
+    return working_directory / "m4_data"
+
+
 def create_mcp_config(
     backend="duckdb",
     db_path=None,
@@ -70,16 +96,27 @@ def create_mcp_config(
     current_dir = get_current_directory()
     python_path = get_python_path()
 
+    # Find the actual m4_data directory (may be in parent directory)
+    m4_data_dir = find_m4_data_dir(current_dir)
+
     config = {
         "mcpServers": {
             "m4": {
                 "command": python_path,
                 "args": ["-m", "m4.mcp_server"],
                 "cwd": str(current_dir),
-                "env": {"PYTHONPATH": str(current_dir / "src"), "M4_BACKEND": backend},
+                "env": {
+                    "M4_BACKEND": backend,
+                    # Set M4_DATA_DIR to ensure server finds data in the correct location
+                    "M4_DATA_DIR": str(m4_data_dir),
+                },
             }
         }
     }
+
+    # Add PYTHONPATH only if running from source (checked by presence of pyproject.toml)
+    if (current_dir / "pyproject.toml").exists():
+        config["mcpServers"]["m4"]["env"]["PYTHONPATH"] = str(current_dir / "src")
 
     # Add backend-specific environment variables
     if backend == "duckdb" and db_path:

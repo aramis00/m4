@@ -1,4 +1,4 @@
-# M4: Many Medical Datasets ↔ MCP ↔ Models 🏥🤖
+# M4 (Beta): Many Medical Datasets ↔ MCP ↔ Models 🏥🤖
 
 
 
@@ -343,12 +343,12 @@ M4 is built upon M3. Please cite the original work:
 }
 ```
 
-You can also use the "Cite this repository" button at the top of the GitHub page for other formats.
 
 ## Related Projects
+M4 is a fork from M3 to add features that are not possible to include in the M3 repo because of it needing to stay in sync with the M3 paper.
 
-M4 has been forked and adapted by the community:
-- [MCPStack-MIMIC](https://github.com/MCP-Pipeline/mcpstack-mimic) - Integrates M4 with other MCP servers (Jupyter, sklearn, etc.)
+M3 has been forked and adapted by the community. Over time, we would love to see them being adapted to M4. Here are the projects:
+- [MCPStack-MIMIC](https://github.com/MCP-Pipeline/mcpstack-mimic) - Integrates M3 with other MCP servers (Jupyter, sklearn, etc.)
 
 ---
 

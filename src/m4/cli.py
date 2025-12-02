@@ -103,6 +103,14 @@ def dataset_init_cmd(
             help="Custom path for the DuckDB file. Uses a default if not set.",
         ),
     ] = None,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Force recreation of DuckDB even if it exists.",
+        ),
+    ] = False,
 ):
     """
     Initialize a local dataset in one step by detecting what's already present:
@@ -131,7 +139,35 @@ def dataset_init_cmd(
         )
         raise typer.Exit(code=1)
 
-    # Resolve roots
+    # Check if m4_data exists in a parent directory
+    from m4.config import _find_project_root_from_cwd
+
+    cwd = Path.cwd()
+    found_root = _find_project_root_from_cwd()
+
+    # If we found m4_data in a parent directory, ask user what to do
+    if found_root != cwd:
+        existing_data_dir = found_root / "m4_data"
+        typer.echo(f"\n⚠️  Found existing m4_data at: {existing_data_dir}")
+        typer.echo(f"Current directory: {cwd}")
+        typer.echo("\nOptions:")
+        typer.echo(f"  1. Use existing location ({existing_data_dir})")
+        typer.echo(f"  2. Create new m4_data in current directory ({cwd / 'm4_data'})")
+
+        choice = typer.prompt(
+            "\nWhich location would you like to use?", type=str, default="1"
+        )
+
+        if choice == "2":
+            # Force use of current directory by setting env var temporarily
+            import os
+
+            os.environ["M4_DATA_DIR"] = str(cwd / "m4_data")
+            typer.echo(f"✅ Will create new m4_data in {cwd / 'm4_data'}\n")
+        else:
+            typer.echo(f"✅ Will use existing m4_data at {existing_data_dir}\n")
+
+    # Resolve roots (now respects the choice made above)
     pq_root = get_dataset_parquet_root(dataset_key)
     if pq_root is None:
         typer.secho(
@@ -246,6 +282,12 @@ def dataset_init_cmd(
         raise typer.Exit(code=1)
 
     final_db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Handle force flag - delete existing database if requested
+    if force and final_db_path.exists():
+        typer.echo(f"⚠️  Deleting existing database at {final_db_path}")
+        final_db_path.unlink()
+
     typer.echo(f"Initializing dataset: '{dataset_name}'")
     typer.echo(f"DuckDB path: {final_db_path}")
     typer.echo(f"Parquet root: {pq_root}")
@@ -420,8 +462,16 @@ def status_cmd():
                     Path(info["db_path"]), cfg["primary_verification_table"]
                 )
                 typer.echo(f"  {cfg['primary_verification_table']}_rowcount: {count:,}")
-            except Exception:
+            except Exception as e:
                 typer.echo("  rowcount: (skipped)")
+                # Show hint if it looks like a path mismatch
+                if "No files found" in str(e) or "no such file" in str(e).lower():
+                    typer.echo(
+                        "  ⚠️  Database views may point to wrong parquet location"
+                    )
+                    typer.echo(
+                        f"  💡 Try: m4 init {label} --force (to recreate database)"
+                    )
 
 
 @app.command("config")
