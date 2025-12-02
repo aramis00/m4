@@ -23,11 +23,44 @@ class MCPConfigGenerator:
     """Generator for MCP server configurations."""
 
     def __init__(self):
+        # Start looking for project root
         p = Path(__file__).resolve()
-        while p != p.parent and not (p / "pyproject.toml").exists():
-            p = p.parent
-        self.current_dir = p
+        found_project_root = False
+
+        # Try to find pyproject.toml
+        search_p = p
+        while search_p != search_p.parent:
+            if (search_p / "pyproject.toml").exists():
+                found_project_root = True
+                p = search_p
+                break
+            search_p = search_p.parent
+
+        if found_project_root:
+            self.current_dir = p
+        else:
+            # If installed as package and no pyproject.toml found, use CWD
+            self.current_dir = Path.cwd()
+
         self.default_python = self._get_default_python()
+
+    def _find_m4_data_dir(self, working_directory: str) -> Path:
+        """Find the actual m4_data directory by searching upward from working_directory."""
+        cwd = Path(working_directory).resolve()
+        for path in [cwd, *cwd.parents]:
+            data_dir = path / "m4_data"
+            if data_dir.exists() and data_dir.is_dir():
+                # Check for characteristic m4 data artifacts
+                if (
+                    (data_dir / "config.json").exists()
+                    or (data_dir / "databases").exists()
+                    or (data_dir / "parquet").exists()
+                    or (data_dir / "datasets").exists()
+                    or (data_dir / "raw_files").exists()
+                ):
+                    return data_dir
+        # If not found, return the default location
+        return Path(working_directory) / "m4_data"
 
     def _get_default_python(self) -> str:
         """Get the default Python executable path."""
@@ -76,11 +109,21 @@ class MCPConfigGenerator:
         if not self._validate_directory(working_directory):
             raise ValueError(f"Invalid working directory: {working_directory}")
 
+        # Find the actual m4_data directory (may be in parent directory)
+        m4_data_dir = self._find_m4_data_dir(working_directory)
+
         # Build environment variables
         env = {
-            "PYTHONPATH": str(Path(working_directory) / "src"),
             "M4_BACKEND": backend,
+            # Set M4_DATA_DIR to ensure server finds data in the correct location
+            "M4_DATA_DIR": str(m4_data_dir),
         }
+
+        # Add PYTHONPATH if we're running from source
+        if (Path(working_directory) / "pyproject.toml").exists() or (
+            Path(working_directory) / "src"
+        ).exists():
+            env["PYTHONPATH"] = str(Path(working_directory) / "src")
 
         # Add backend-specific environment variables
         if backend == "duckdb":
