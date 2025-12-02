@@ -27,9 +27,14 @@ jobs:
     - name: Extract version from tag
       id: get_version
       run: |
-        # Get version from git tag (removes 'v' prefix if present)
-        VERSION=${GITHUB_REF#refs/tags/}
-        VERSION=${VERSION#v}
+        if [[ $GITHUB_REF == refs/tags/* ]]; then
+          VERSION=${GITHUB_REF#refs/tags/}
+          VERSION=${VERSION#v}
+        else
+          # Fallback for non-tag runs (e.g. manual dispatch on main)
+          VERSION="0.0.0.dev0"
+          echo "Warning: Triggered on $GITHUB_REF, not a tag. Using placeholder: $VERSION"
+        fi
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "Publishing version: $VERSION"
 
