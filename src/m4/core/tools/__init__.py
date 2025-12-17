@@ -15,6 +15,11 @@ from m4.core.tools.management import (
     ListDatasetsTool,
     SetDatasetTool,
 )
+from m4.core.tools.notes import (
+    GetNoteTool,
+    ListPatientNotesTool,
+    SearchNotesTool,
+)
 from m4.core.tools.registry import CompatibilityResult, ToolRegistry, ToolSelector
 
 # Import tool classes for registration
@@ -60,6 +65,11 @@ def init_tools() -> None:
         ToolRegistry.register(GetTableInfoTool())
         ToolRegistry.register(ExecuteQueryTool())
 
+        # Register clinical notes tools
+        ToolRegistry.register(SearchNotesTool())
+        ToolRegistry.register(GetNoteTool())
+        ToolRegistry.register(ListPatientNotesTool())
+
         _tools_initialized = True
 
 
@@ -80,8 +90,11 @@ __all__ = [
     "CompatibilityResult",
     "ExecuteQueryTool",
     "GetDatabaseSchemaTool",
+    "GetNoteTool",
     "GetTableInfoTool",
     "ListDatasetsTool",
+    "ListPatientNotesTool",
+    "SearchNotesTool",
     "SetDatasetTool",
     "Tool",
     "ToolInput",

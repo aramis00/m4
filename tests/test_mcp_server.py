@@ -105,10 +105,6 @@ class TestMCPTools:
         mock_ds = DatasetDefinition(
             name="mimic-demo",
             modalities=frozenset({Modality.TABULAR}),
-            table_mappings={
-                "icustays": "icu_icustays",
-                "labevents": "hosp_labevents",
-            },
         )
 
         with patch.dict(
@@ -318,9 +314,6 @@ class TestBigQueryIntegration:
             bigquery_project_id="test-project",
             bigquery_dataset_ids=["mimic_hosp", "mimic_icu"],
             modalities=frozenset({Modality.TABULAR}),
-            table_mappings={
-                "admissions": "admissions",
-            },
         )
 
         with patch.dict(

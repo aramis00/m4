@@ -22,6 +22,11 @@ from m4.auth import init_oauth2, require_oauth2
 from m4.core.datasets import DatasetRegistry
 from m4.core.tools import ToolRegistry, ToolSelector, init_tools
 from m4.core.tools.management import ListDatasetsInput, SetDatasetInput
+from m4.core.tools.notes import (
+    GetNoteInput,
+    ListPatientNotesInput,
+    SearchNotesInput,
+)
 from m4.core.tools.tabular import (
     ExecuteQueryInput,
     GetDatabaseSchemaInput,
@@ -46,6 +51,9 @@ _MCP_TOOL_NAMES = frozenset(
         "get_database_schema",
         "get_table_info",
         "execute_query",
+        "search_notes",
+        "get_note",
+        "list_patient_notes",
     }
 )
 
@@ -167,6 +175,122 @@ def execute_query(sql_query: str) -> str:
 
     tool = ToolRegistry.get("execute_query")
     return tool.invoke(dataset, ExecuteQueryInput(sql_query=sql_query)).result
+
+
+# ==========================================
+# CLINICAL NOTES TOOLS
+# ==========================================
+
+
+@mcp.tool()
+@require_oauth2
+def search_notes(
+    query: str,
+    note_type: str = "all",
+    limit: int = 5,
+    snippet_length: int = 300,
+) -> str:
+    """🔍 Search clinical notes by keyword.
+
+    Returns snippets around matches to prevent context overflow.
+    Use get_note() to retrieve full text of specific notes.
+
+    **Note types:** 'discharge' (summaries), 'radiology' (reports), or 'all'
+
+    Args:
+        query: Search term to find in notes.
+        note_type: Type of notes to search ('discharge', 'radiology', or 'all').
+        limit: Maximum number of results per note type (default: 5).
+        snippet_length: Characters of context around matches (default: 300).
+
+    Returns:
+        Matching snippets with note IDs for follow-up retrieval.
+    """
+    dataset = DatasetRegistry.get_active()
+
+    result = _tool_selector.check_compatibility("search_notes", dataset)
+    if not result.compatible:
+        return result.error_message
+
+    tool = ToolRegistry.get("search_notes")
+    return tool.invoke(
+        dataset,
+        SearchNotesInput(
+            query=query,
+            note_type=note_type,
+            limit=limit,
+            snippet_length=snippet_length,
+        ),
+    ).result
+
+
+@mcp.tool()
+@require_oauth2
+def get_note(note_id: str, max_length: int | None = None) -> str:
+    """📄 Retrieve full text of a specific clinical note.
+
+    **Warning:** Clinical notes can be very long. Consider using
+    search_notes() first to find relevant notes, or use max_length
+    to truncate output.
+
+    Args:
+        note_id: The note ID (e.g., from search_notes or list_patient_notes).
+        max_length: Optional maximum characters to return (truncates if exceeded).
+
+    Returns:
+        Full note text, or truncated version if max_length specified.
+    """
+    dataset = DatasetRegistry.get_active()
+
+    result = _tool_selector.check_compatibility("get_note", dataset)
+    if not result.compatible:
+        return result.error_message
+
+    tool = ToolRegistry.get("get_note")
+    return tool.invoke(
+        dataset,
+        GetNoteInput(note_id=note_id, max_length=max_length),
+    ).result
+
+
+@mcp.tool()
+@require_oauth2
+def list_patient_notes(
+    subject_id: int,
+    note_type: str = "all",
+    limit: int = 20,
+) -> str:
+    """📋 List available clinical notes for a patient.
+
+    Returns note metadata (IDs, types, lengths) without full text.
+    Use get_note(note_id) to retrieve specific notes.
+
+    **Cross-dataset tip:** Get subject_id from MIMIC-IV queries, then
+    use it here to find related clinical notes.
+
+    Args:
+        subject_id: Patient identifier (same as in MIMIC-IV).
+        note_type: Type of notes to list ('discharge', 'radiology', or 'all').
+        limit: Maximum notes to return (default: 20).
+
+    Returns:
+        List of available notes with metadata for the patient.
+    """
+    dataset = DatasetRegistry.get_active()
+
+    result = _tool_selector.check_compatibility("list_patient_notes", dataset)
+    if not result.compatible:
+        return result.error_message
+
+    tool = ToolRegistry.get("list_patient_notes")
+    return tool.invoke(
+        dataset,
+        ListPatientNotesInput(
+            subject_id=subject_id,
+            note_type=note_type,
+            limit=limit,
+        ),
+    ).result
 
 
 def main():

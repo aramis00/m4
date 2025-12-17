@@ -27,7 +27,6 @@ def mock_dataset():
     return DatasetDefinition(
         name="test-dataset",
         modalities={Modality.TABULAR},
-        table_mappings={},
     )
 
 

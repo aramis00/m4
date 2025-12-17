@@ -55,7 +55,7 @@ class DatasetDefinition:
         bigquery_dataset_ids: BigQuery dataset IDs containing the tables
         requires_authentication: Whether dataset requires auth (e.g., credentialed access)
         modalities: Immutable set of data modalities (TABULAR, NOTES, etc.)
-        table_mappings: Logical to physical table name mappings
+        related_datasets: Cross-references to related datasets with linkage info
     """
 
     name: str
@@ -76,8 +76,9 @@ class DatasetDefinition:
     # Modality declarations (immutable)
     modalities: frozenset[Modality] = field(default_factory=frozenset)
 
-    # Table name mappings (dataset-specific)
-    table_mappings: dict[str, str] = field(default_factory=dict)
+    # Related datasets (for cross-referencing, e.g., notes linked via subject_id)
+    # Format: {"dataset-name": "Description of how to link"}
+    related_datasets: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         """Initialize computed fields."""
@@ -222,12 +223,6 @@ class DatasetRegistry:
             bigquery_project_id=None,
             bigquery_dataset_ids=[],
             modalities=frozenset({Modality.TABULAR}),
-            table_mappings={
-                "icustays": "icu_icustays",
-                "labevents": "hosp_labevents",
-                "admissions": "hosp_admissions",
-                "patients": "hosp_patients",
-            },
         )
 
         mimic_iv = DatasetDefinition(
@@ -240,11 +235,29 @@ class DatasetRegistry:
             bigquery_dataset_ids=["mimiciv_3_1_hosp", "mimiciv_3_1_icu"],
             requires_authentication=True,
             modalities=frozenset({Modality.TABULAR}),
-            table_mappings={
-                "icustays": "icustays",
-                "labevents": "labevents",
-                "admissions": "admissions",
-                "patients": "patients",
+            related_datasets={
+                "mimic-iv-note": (
+                    "Clinical notes (discharge summaries, radiology reports). "
+                    "Link via subject_id."
+                ),
+            },
+        )
+
+        mimic_iv_note = DatasetDefinition(
+            name="mimic-iv-note",
+            description="MIMIC-IV Clinical Notes (discharge summaries, radiology reports)",
+            file_listing_url="https://physionet.org/files/mimic-iv-note/2.2/",
+            subdirectories_to_scan=["note"],
+            primary_verification_table="discharge",
+            bigquery_project_id="physionet-data",
+            bigquery_dataset_ids=["mimiciv_note"],
+            requires_authentication=True,
+            modalities=frozenset({Modality.NOTES}),
+            related_datasets={
+                "mimic-iv": (
+                    "Structured clinical data (labs, vitals, admissions). "
+                    "Link via subject_id."
+                ),
             },
         )
 
@@ -258,16 +271,11 @@ class DatasetRegistry:
             bigquery_dataset_ids=["eicu_crd"],
             requires_authentication=True,
             modalities=frozenset({Modality.TABULAR}),
-            table_mappings={
-                "icustays": "patient",
-                "labevents": "lab",
-                "admissions": "patient",
-                "patients": "patient",
-            },
         )
 
         cls.register(mimic_iv_demo)
         cls.register(mimic_iv)
+        cls.register(mimic_iv_note)
         cls.register(eicu)
 
 
