@@ -321,8 +321,13 @@ class TestInitTools:
         assert "get_table_info" in tool_names
         assert "execute_query" in tool_names
 
-        # Total: 5 tools
-        assert len(all_tools) == 5
+        # Notes tools
+        assert "search_notes" in tool_names
+        assert "get_note" in tool_names
+        assert "list_patient_notes" in tool_names
+
+        # Total: 8 tools (2 management + 3 tabular + 3 notes)
+        assert len(all_tools) == 8
 
         # Cleanup
         reset_tools()
@@ -338,9 +343,9 @@ class TestInitTools:
         init_tools()
         init_tools()
 
-        # Should still have exactly 5 tools
+        # Should still have exactly 8 tools
         all_tools = ToolRegistry.list_all()
-        assert len(all_tools) == 5
+        assert len(all_tools) == 8
 
         reset_tools()
 
@@ -349,14 +354,14 @@ class TestInitTools:
         from m4.core.tools import init_tools, reset_tools
 
         init_tools()
-        assert len(ToolRegistry.list_all()) == 5
+        assert len(ToolRegistry.list_all()) == 8
 
         reset_tools()
         assert len(ToolRegistry.list_all()) == 0
 
         # Can reinitialize after reset
         init_tools()
-        assert len(ToolRegistry.list_all()) == 5
+        assert len(ToolRegistry.list_all()) == 8
 
         reset_tools()
 
@@ -365,8 +370,11 @@ class TestInitTools:
         from m4.core.tools import (
             ExecuteQueryTool,
             GetDatabaseSchemaTool,
+            GetNoteTool,
             GetTableInfoTool,
             ListDatasetsTool,
+            ListPatientNotesTool,
+            SearchNotesTool,
             SetDatasetTool,
         )
 
@@ -376,6 +384,9 @@ class TestInitTools:
             ExecuteQueryTool,
             ListDatasetsTool,
             SetDatasetTool,
+            SearchNotesTool,
+            GetNoteTool,
+            ListPatientNotesTool,
         ]
 
         for tool_class in tool_classes:

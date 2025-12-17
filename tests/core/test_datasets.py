@@ -35,12 +35,10 @@ class TestDatasetDefinition:
         ds = DatasetDefinition(
             name="test-dataset",
             modalities=frozenset({Modality.TABULAR, Modality.NOTES}),
-            table_mappings={"icustays": "icu_icustays"},
         )
 
         assert Modality.TABULAR in ds.modalities
         assert Modality.NOTES in ds.modalities
-        assert ds.table_mappings["icustays"] == "icu_icustays"
 
     def test_default_duckdb_filename_generation(self):
         """Test that default DuckDB filename is auto-generated."""
@@ -92,16 +90,6 @@ class TestDatasetRegistry:
         mimic_iv = DatasetRegistry.get("mimic-iv")
 
         assert Modality.TABULAR in mimic_iv.modalities
-
-    def test_mimic_demo_table_mappings(self):
-        """Test that MIMIC demo has table mappings."""
-        DatasetRegistry.reset()
-        mimic_demo = DatasetRegistry.get("mimic-iv-demo")
-
-        assert "icustays" in mimic_demo.table_mappings
-        assert mimic_demo.table_mappings["icustays"] == "icu_icustays"
-        assert "labevents" in mimic_demo.table_mappings
-        assert mimic_demo.table_mappings["labevents"] == "hosp_labevents"
 
     def test_register_custom_dataset(self):
         """Test registering a custom dataset."""

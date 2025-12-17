@@ -115,43 +115,16 @@ For datasets requiring PhysioNet credentials (most full datasets):
 For more control, register datasets in Python:
 
 ```python
-from m4.core.datasets import DatasetDefinition, DatasetRegistry, Capability
+from m4.core.datasets import DatasetDefinition, DatasetRegistry, Modality
 
 my_dataset = DatasetDefinition(
     name="my-custom-dataset",
     description="My custom clinical dataset",
     primary_verification_table="patients",
-    capabilities=frozenset({
-        Capability.HAS_TABULAR_DATA,
-        Capability.COHORT_QUERY,
-        Capability.SCHEMA_INTROSPECTION,
-        Capability.LAB_RESULTS,
-    }),
-    table_mappings={
-        "patients": "my_patients_table",
-        "labevents": "my_lab_table",
-    },
+    modalities=frozenset({Modality.TABULAR}),
 )
 
 DatasetRegistry.register(my_dataset)
-```
-
-## Table Mappings
-
-The `table_mappings` field maps logical table names to physical names. This allows tools to work across datasets with different schemas:
-
-```python
-# MIMIC-IV uses prefixed names
-table_mappings={
-    "icustays": "icu_icustays",
-    "labevents": "hosp_labevents",
-}
-
-# eICU uses different table names entirely
-table_mappings={
-    "icustays": "patient",
-    "labevents": "lab",
-}
 ```
 
 ## Tips
