@@ -92,7 +92,8 @@ Once connected, try asking:
 Switch datasets anytime:
 ```bash
 m4 use mimic-iv     # Switch to full MIMIC-IV
-m4 status           # See all available datasets
+m4 status           # Show active dataset details
+m4 status --all     # List all available datasets
 ```
 
 <details>

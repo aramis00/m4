@@ -263,3 +263,63 @@ def print_error_panel(title: str, message: str, hint: str | None = None) -> None
     if hint:
         content += f"\n\n[dim]Hint: {hint}[/dim]"
     console.print(Panel(content, title=f"[error]{title}[/error]", padding=(1, 2)))
+
+
+def print_datasets_table(
+    datasets: list[dict],
+    active_dataset: str | None = None,
+) -> None:
+    """
+    Print a compact table of all datasets.
+
+    Args:
+        datasets: List of dicts with keys: name, parquet_present, db_present,
+                  bigquery_available, parquet_size_gb (optional)
+        active_dataset: Name of the currently active dataset
+    """
+    table = Table(
+        show_header=True,
+        header_style="bold",
+        border_style="dim",
+        padding=(0, 1),
+    )
+
+    table.add_column("Dataset", style="bold")
+    table.add_column("Active", justify="center")
+    table.add_column("Local", justify="center")
+    table.add_column("BigQuery", justify="center")
+    table.add_column("Size", justify="right")
+
+    for ds in datasets:
+        name = ds["name"]
+        is_active = name == active_dataset
+
+        # Active indicator
+        active_str = "[success]*[/success]" if is_active else "[muted]-[/muted]"
+
+        # Local status (combine parquet + duckdb)
+        pq = ds.get("parquet_present", False)
+        db = ds.get("db_present", False)
+        if pq and db:
+            local_str = "[success]OK[/success]"
+        elif pq:
+            local_str = "[warning]Parquet[/warning]"
+        elif db:
+            local_str = "[warning]DB only[/warning]"
+        else:
+            local_str = "[muted]-[/muted]"
+
+        # BigQuery status
+        bq = ds.get("bigquery_available", False)
+        bq_str = "[success]OK[/success]" if bq else "[muted]-[/muted]"
+
+        # Size
+        size_gb = ds.get("parquet_size_gb")
+        if size_gb is not None:
+            size_str = f"{size_gb:.2f} GB"
+        else:
+            size_str = "[muted]-[/muted]"
+
+        table.add_row(name, active_str, local_str, bq_str, size_str)
+
+    console.print(table)
