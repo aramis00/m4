@@ -22,8 +22,8 @@ repos:
     hooks:
       - id: pytest
         name: pytest
-        entry: pytest
-        language: system # Assumes pytest is installed in your environment (via pip install .[dev])
+        entry: uv run pytest
+        language: system
         types: [python] # Run on changes to Python files
         pass_filenames: false # Pytest typically runs on the whole suite
         # stages: [commit] # This is the default, explicitly stating it

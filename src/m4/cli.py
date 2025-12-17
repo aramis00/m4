@@ -21,6 +21,7 @@ from m4.console import (
     print_banner,
     print_command,
     print_dataset_status,
+    print_datasets_table,
     print_error_panel,
     print_init_complete,
     print_key_value,
@@ -394,64 +395,120 @@ def use_cmd(
 
 
 @app.command("status")
-def status_cmd():
-    """Show active dataset, local DB path, Parquet presence, quick counts and sizes."""
+def status_cmd(
+    show_all: Annotated[
+        bool,
+        typer.Option(
+            "--all",
+            "-a",
+            help="Show all supported datasets in a table view.",
+        ),
+    ] = False,
+):
+    """Show active dataset status. Use --all for all supported datasets."""
     print_logo(show_tagline=False, show_version=True)
     console.print()
 
-    active = get_active_dataset() or "(unset)"
-    if active != "(unset)":
-        console.print(f"[bold]Active dataset:[/bold] [success]{active}[/success]")
-    else:
-        console.print(f"[bold]Active dataset:[/bold] [warning]{active}[/warning]")
-
+    active = get_active_dataset()
     availability = detect_available_local_datasets()
-    if not availability:
-        console.print("\n[muted]No datasets detected.[/muted]")
+
+    if show_all:
+        # Table view of all datasets
+        if not availability:
+            console.print("[muted]No datasets detected.[/muted]")
+            return
+
+        # Build dataset info list for table
+        datasets_info = []
+        for label, ds_info in availability.items():
+            ds_def = DatasetRegistry.get(label)
+            bigquery_available = bool(ds_def and ds_def.bigquery_dataset_ids)
+
+            # Get size if parquet present
+            parquet_size_gb = None
+            if ds_info["parquet_present"]:
+                try:
+                    size_bytes = compute_parquet_dir_size(Path(ds_info["parquet_root"]))
+                    parquet_size_gb = float(size_bytes) / (1024**3)
+                except Exception:
+                    pass
+
+            datasets_info.append(
+                {
+                    "name": label,
+                    "parquet_present": ds_info["parquet_present"],
+                    "db_present": ds_info["db_present"],
+                    "bigquery_available": bigquery_available,
+                    "parquet_size_gb": parquet_size_gb,
+                }
+            )
+
+        print_datasets_table(datasets_info, active_dataset=active)
         return
 
-    for label, ds_info in availability.items():
-        is_active = label == active
-
-        # Get size if parquet present
-        parquet_size_gb = None
-        if ds_info["parquet_present"]:
-            try:
-                size_bytes = compute_parquet_dir_size(Path(ds_info["parquet_root"]))
-                parquet_size_gb = float(size_bytes) / (1024**3)
-            except Exception:
-                pass
-
-        # Get dataset definition for BigQuery status and verification
-        ds_def = DatasetRegistry.get(label)
-        bigquery_available = bool(ds_def and ds_def.bigquery_dataset_ids)
-
-        # Get row count if possible
-        row_count = None
-        if ds_info["db_present"] and ds_def and ds_def.primary_verification_table:
-            try:
-                row_count = verify_table_rowcount(
-                    Path(ds_info["db_path"]), ds_def.primary_verification_table
-                )
-            except Exception as e:
-                # Show hint if it looks like a path mismatch
-                if "No files found" in str(e) or "no such file" in str(e).lower():
-                    warning("Database views may point to wrong parquet location")
-                    console.print(
-                        f"  [muted]Try:[/muted] [command]m4 init {label} --force[/command]"
-                    )
-
-        print_dataset_status(
-            name=label,
-            parquet_present=ds_info["parquet_present"],
-            db_present=ds_info["db_present"],
-            parquet_root=str(ds_info["parquet_root"]),
-            db_path=str(ds_info["db_path"]),
-            parquet_size_gb=parquet_size_gb,
-            bigquery_available=bigquery_available,
-            row_count=row_count,
-            is_active=is_active,
+    # Default: show only active dataset with full detail
+    if not active:
+        console.print("[warning]No active dataset set.[/warning]")
+        console.print()
+        console.print(
+            "[muted]Set one with:[/muted] [command]m4 use <dataset>[/command]"
         )
+        console.print(
+            "[muted]List all with:[/muted] [command]m4 status --all[/command]"
+        )
+        return
+
+    console.print(f"[bold]Active dataset:[/bold] [success]{active}[/success]")
+
+    # Get info for active dataset
+    ds_info = availability.get(active)
+    if not ds_info:
+        console.print()
+        warning(f"Dataset '{active}' is set but not found locally.")
+        console.print(
+            f"  [muted]Initialize with:[/muted] [command]m4 init {active}[/command]"
+        )
+        return
+
+    # Get size if parquet present
+    parquet_size_gb = None
+    if ds_info["parquet_present"]:
+        try:
+            size_bytes = compute_parquet_dir_size(Path(ds_info["parquet_root"]))
+            parquet_size_gb = float(size_bytes) / (1024**3)
+        except Exception:
+            pass
+
+    # Get dataset definition for BigQuery status and verification
+    ds_def = DatasetRegistry.get(active)
+    bigquery_available = bool(ds_def and ds_def.bigquery_dataset_ids)
+
+    # Get row count if possible
+    row_count = None
+    if ds_info["db_present"] and ds_def and ds_def.primary_verification_table:
+        try:
+            row_count = verify_table_rowcount(
+                Path(ds_info["db_path"]), ds_def.primary_verification_table
+            )
+        except Exception as e:
+            # Show hint if it looks like a path mismatch
+            if "No files found" in str(e) or "no such file" in str(e).lower():
+                warning("Database views may point to wrong parquet location")
+                console.print(
+                    f"  [muted]Try:[/muted] [command]m4 init {active} --force[/command]"
+                )
+
+    print_dataset_status(
+        name=active,
+        parquet_present=ds_info["parquet_present"],
+        db_present=ds_info["db_present"],
+        parquet_root=str(ds_info["parquet_root"]),
+        db_path=str(ds_info["db_path"]),
+        parquet_size_gb=parquet_size_gb,
+        bigquery_available=bigquery_available,
+        row_count=row_count,
+        is_active=True,
+    )
 
 
 @app.command("config")
