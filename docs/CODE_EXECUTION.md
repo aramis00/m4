@@ -219,7 +219,9 @@ The Python API shines when you need to:
 
 ## Integration with Claude Code
 
-Claude Code can execute Python directly, making the API immediately useful. When you ask Claude to analyze clinical data, it can:
+Claude Code can execute Python directly, making the API immediately useful. See [this example session](M4_Code_Execution_Example.pdf) for a walkthrough.
+
+When you ask Claude to analyze clinical data, it can:
 
 1. Import the M4 API
 2. Write analysis code
