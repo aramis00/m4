@@ -16,7 +16,7 @@
 
 M4 is infrastructure for AI-assisted clinical research. Initialize MIMIC-IV, eICU, or custom datasets as fast local databases (with optional BigQuery for cloud access). Your AI agents get specialized tools (MCP, Python API) and clinical knowledge (agent skills) to query and analyze them.
 
-[Usage example – M4 MCP](https://claude.ai/share/93f26832-f298-4d1d-96e3-5608d7f0d7ad)
+[Usage example – M4 MCP](https://claude.ai/share/93f26832-f298-4d1d-96e3-5608d7f0d7ad) | [Usage example – Code Execution](docs/M4_Code_Execution_Example.pdf)
 
 > M4 builds on the [M3](https://github.com/rafiattrach/m3) project. Please [cite](#citation) their work when using M4!
 
@@ -27,16 +27,16 @@ Clinical research shouldn't require mastering database schemas. Whether you're s
 
 M4 makes this possible by giving AI agents deep clinical knowledge:
 
-**Understand clinical semantics.** 
+**Understand clinical semantics.**
 LLMs can write SQL, but have a harder time with (dataset-specific) clinical semantics. M4's comprehensive agent skills encode validated clinical concepts—so "find sepsis patients" produces clinically correct queries on any supported dataset.
 
-**Work across modalities.** 
+**Work across modalities.**
 Clinical research with M4 spans structured data, clinical notes, and (soon) waveforms and imaging. M4 dynamically selects tools based on what each dataset contains—query labs in MIMIC-IV, search discharge summaries in MIMIC-IV-Note, all through the same interface.
 
-**Go beyond chat.** 
+**Go beyond chat.**
 Data exploration and simple research questions work great via MCP. But real research requires iteration: explore a cohort, compute statistics, visualize distributions, refine criteria. M4's Python API returns DataFrames that integrate with pandas, scipy, and matplotlib—turning your AI assistant into a research partner that can execute complete analysis workflows.
 
-**Cross-dataset research.** 
+**Cross-dataset research.**
 You should be able to ask for multi-dataset queries or cross-dataset comparisons. M4 makes this easier than ever as the AI can switch between your initialized datasets on its own, allowing it to do cross-dataset tasks for you.
 
 
@@ -122,7 +122,7 @@ The API uses the same tools as the MCP server, so behavior is consistent. But in
 - Statistical computations, survival analysis, cohort characterization
 - Building reproducible analysis notebooks
 
-See [Code Execution Guide](docs/CODE_EXECUTION.md) for the full API reference.
+See [Code Execution Guide](docs/CODE_EXECUTION.md) for the full API reference and [this example session](docs/M4_Code_Execution_Example.pdf) for a walkthrough.
 
 
 ## Agent Skills
