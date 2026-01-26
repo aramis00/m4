@@ -1,6 +1,6 @@
 -- Elixhauser Comorbidity Index for MIMIC-IV
 -- Supports both ICD-9-CM and ICD-10-CM codes
--- Based on Quan et al. 2005: "Coding algorithms for defining comorbidities 
+-- Based on Quan et al. 2005: "Coding algorithms for defining comorbidities
 -- in ICD-9-CM and ICD-10 administrative data." Medical Care 43(11):1130-1139.
 -- https://www.ncbi.nlm.nih.gov/pubmed/16224307
 
@@ -8,7 +8,7 @@
 -- Primary diagnosis (seq_num = 1) is excluded per Elixhauser methodology
 
 WITH eliflg AS (
-  SELECT 
+  SELECT
     hadm_id,
     seq_num,
     icd_code,
@@ -25,7 +25,7 @@ WITH eliflg AS (
       -- ICD-10: I09.9, I11.0, I13.0, I13.2, I25.5, I42.0, I42.5-I42.9, I43.x, I50.x, P29.0
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('I099','I110','I130','I132','I255','I420','I425','I426','I427','I428','I429','P290') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('I43','I50') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS chf,
 
     -- =============================================================
@@ -38,7 +38,7 @@ WITH eliflg AS (
       -- ICD-10: I44.1-I44.3, I45.6, I45.9, I47.x-I49.x, R00.0, R00.1, R00.8, T82.1, Z45.0, Z95.0
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('I441','I442','I443','I456','I459','R000','R001','R008','T821','Z450','Z950') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('I47','I48','I49') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS arrhy,
 
     -- =============================================================
@@ -51,7 +51,7 @@ WITH eliflg AS (
       -- ICD-10: A52.0, I05.x-I08.x, I09.1, I09.8, I34.x-I39.x, Q23.0-Q23.3, Z95.2, Z95.4
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('A520','I091','I098','Q230','Q231','Q232','Q233','Z952','Z954') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('I05','I06','I07','I08','I34','I35','I36','I37','I38','I39') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS valve,
 
     -- =============================================================
@@ -64,7 +64,7 @@ WITH eliflg AS (
       -- ICD-10: I26.x, I27.x, I28.0, I28.8, I28.9
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('I280','I288','I289') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('I26','I27') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS pulmcirc,
 
     -- =============================================================
@@ -77,7 +77,7 @@ WITH eliflg AS (
       -- ICD-10: I70.x, I71.x, I73.1, I73.8, I73.9, I77.1, I79.0, I79.2, K55.1, K55.8, K55.9, Z95.8, Z95.9
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('I731','I738','I739','I771','I790','I792','K551','K558','K559','Z958','Z959') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('I70','I71') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS perivasc,
 
     -- =============================================================
@@ -88,7 +88,7 @@ WITH eliflg AS (
       WHEN icd_version = 9 AND SUBSTR(icd_code, 1, 3) IN ('401') THEN 1
       -- ICD-10: I10.x
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('I10') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS htn,
 
     -- =============================================================
@@ -99,7 +99,7 @@ WITH eliflg AS (
       WHEN icd_version = 9 AND SUBSTR(icd_code, 1, 3) IN ('402','403','404','405') THEN 1
       -- ICD-10: I11.x-I13.x, I15.x
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('I11','I12','I13','I15') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS htncx,
 
     -- =============================================================
@@ -112,7 +112,7 @@ WITH eliflg AS (
       -- ICD-10: G04.1, G11.4, G80.1, G80.2, G81.x, G82.x, G83.0-G83.4, G83.9
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('G041','G114','G801','G802','G830','G831','G832','G833','G834','G839') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('G81','G82') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS para,
 
     -- =============================================================
@@ -126,7 +126,7 @@ WITH eliflg AS (
       -- ICD-10: G10.x-G13.x, G20.x-G22.x, G25.4, G25.5, G31.2, G31.8, G31.9, G32.x, G35.x-G37.x, G40.x, G41.x, G93.1, G93.4, R47.0, R56.x
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('G254','G255','G312','G318','G319','G931','G934','R470') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('G10','G11','G12','G13','G20','G21','G22','G32','G35','G36','G37','G40','G41','R56') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS neuro,
 
     -- =============================================================
@@ -139,7 +139,7 @@ WITH eliflg AS (
       -- ICD-10: I27.8, I27.9, J40.x-J47.x, J60.x-J67.x, J68.4, J70.1, J70.3
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('I278','I279','J684','J701','J703') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('J40','J41','J42','J43','J44','J45','J46','J47','J60','J61','J62','J63','J64','J65','J66','J67') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS chrnlung,
 
     -- =============================================================
@@ -150,7 +150,7 @@ WITH eliflg AS (
       WHEN icd_version = 9 AND SUBSTR(icd_code, 1, 4) IN ('2500','2501','2502','2503') THEN 1
       -- ICD-10: E10.0, E10.1, E10.9, E11.0, E11.1, E11.9, E12.0, E12.1, E12.9, E13.0, E13.1, E13.9, E14.0, E14.1, E14.9
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('E100','E101','E109','E110','E111','E119','E120','E121','E129','E130','E131','E139','E140','E141','E149') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS dm,
 
     -- =============================================================
@@ -165,7 +165,7 @@ WITH eliflg AS (
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('E122','E123','E124','E125','E126','E127','E128') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('E132','E133','E134','E135','E136','E137','E138') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('E142','E143','E144','E145','E146','E147','E148') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS dmcx,
 
     -- =============================================================
@@ -178,7 +178,7 @@ WITH eliflg AS (
       -- ICD-10: E00.x-E03.x, E89.0
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('E890') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('E00','E01','E02','E03') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS hypothy,
 
     -- =============================================================
@@ -192,7 +192,7 @@ WITH eliflg AS (
       -- ICD-10: I12.0, I13.1, N18.x, N19.x, N25.0, Z49.0-Z49.2, Z94.0, Z99.2
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('I120','I131','N250','Z490','Z491','Z492','Z940','Z992') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('N18','N19') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS renlfail,
 
     -- =============================================================
@@ -206,7 +206,7 @@ WITH eliflg AS (
       -- ICD-10: B18.x, I85.x, I86.4, I98.2, K70.x, K71.1, K71.3-K71.5, K71.7, K72.x-K74.x, K76.0, K76.2-K76.9, Z94.4
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('I864','I982','K711','K713','K714','K715','K717','K760','K762','K763','K764','K765','K766','K767','K768','K769','Z944') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('B18','I85','K70','K72','K73','K74') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS liver,
 
     -- =============================================================
@@ -217,7 +217,7 @@ WITH eliflg AS (
       WHEN icd_version = 9 AND SUBSTR(icd_code, 1, 4) IN ('5317','5319','5327','5329','5337','5339','5347','5349') THEN 1
       -- ICD-10: K25.7, K25.9, K26.7, K26.9, K27.7, K27.9, K28.7, K28.9
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('K257','K259','K267','K269','K277','K279','K287','K289') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS ulcer,
 
     -- =============================================================
@@ -228,7 +228,7 @@ WITH eliflg AS (
       WHEN icd_version = 9 AND SUBSTR(icd_code, 1, 3) IN ('042','043','044') THEN 1
       -- ICD-10: B20.x-B22.x, B24.x
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('B20','B21','B22','B24') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS aids,
 
     -- =============================================================
@@ -241,7 +241,7 @@ WITH eliflg AS (
       -- ICD-10: C81.x-C85.x, C88.x, C96.x, C90.0, C90.2
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('C900','C902') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('C81','C82','C83','C84','C85','C88','C96') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS lymph,
 
     -- =============================================================
@@ -252,7 +252,7 @@ WITH eliflg AS (
       WHEN icd_version = 9 AND SUBSTR(icd_code, 1, 3) IN ('196','197','198','199') THEN 1
       -- ICD-10: C77.x-C80.x
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('C77','C78','C79','C80') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS mets,
 
     -- =============================================================
@@ -279,7 +279,7 @@ WITH eliflg AS (
         'C60','C61','C62','C63','C64','C65','C66','C67','C68','C69',
         'C70','C71','C72','C73','C74','C75','C76','C97'
       ) THEN 1
-      ELSE 0 
+      ELSE 0
     END AS tumor,
 
     -- =============================================================
@@ -293,7 +293,7 @@ WITH eliflg AS (
       -- ICD-10: L94.0, L94.1, L94.3, M05.x, M06.x, M08.x, M12.0, M12.3, M30.x, M31.0-M31.3, M32.x-M35.x, M45.x, M46.1, M46.8, M46.9
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('L940','L941','L943','M120','M123','M310','M311','M312','M313','M461','M468','M469') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('M05','M06','M08','M30','M32','M33','M34','M35','M45') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS arth,
 
     -- =============================================================
@@ -306,7 +306,7 @@ WITH eliflg AS (
       -- ICD-10: D65-D68.x, D69.1, D69.3-D69.6
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('D691','D693','D694','D695','D696') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('D65','D66','D67','D68') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS coag,
 
     -- =============================================================
@@ -317,7 +317,7 @@ WITH eliflg AS (
       WHEN icd_version = 9 AND SUBSTR(icd_code, 1, 4) IN ('2780') THEN 1
       -- ICD-10: E66.x
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('E66') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS obese,
 
     -- =============================================================
@@ -330,7 +330,7 @@ WITH eliflg AS (
       -- ICD-10: E40.x-E46.x, R63.4, R64
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('R634') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('E40','E41','E42','E43','E44','E45','E46','R64') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS wghtloss,
 
     -- =============================================================
@@ -343,7 +343,7 @@ WITH eliflg AS (
       -- ICD-10: E22.2, E86.x, E87.x
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('E222') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('E86','E87') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS lytes,
 
     -- =============================================================
@@ -354,7 +354,7 @@ WITH eliflg AS (
       WHEN icd_version = 9 AND SUBSTR(icd_code, 1, 4) IN ('2800') THEN 1
       -- ICD-10: D50.0
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('D500') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS bldloss,
 
     -- =============================================================
@@ -367,7 +367,7 @@ WITH eliflg AS (
       -- ICD-10: D50.8, D50.9, D51.x-D53.x
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('D508','D509') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('D51','D52','D53') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS anemdef,
 
     -- =============================================================
@@ -380,7 +380,7 @@ WITH eliflg AS (
       -- ICD-10: F10.x, E52, G62.1, I42.6, K29.2, K70.0, K70.3, K70.9, T51.x, Z50.2, Z71.4, Z72.1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('G621','I426','K292','K700','K703','K709','Z502','Z714','Z721') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('F10','E52','T51') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS alcohol,
 
     -- =============================================================
@@ -394,7 +394,7 @@ WITH eliflg AS (
       -- ICD-10: F11.x-F16.x, F18.x, F19.x, Z71.5, Z72.2
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('Z715','Z722') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('F11','F12','F13','F14','F15','F16','F18','F19') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS drug,
 
     -- =============================================================
@@ -408,7 +408,7 @@ WITH eliflg AS (
       -- ICD-10: F20.x, F22.x-F25.x, F28.x, F29.x, F30.2, F31.2, F31.5
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('F302','F312','F315') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('F20','F22','F23','F24','F25','F28','F29') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS psych,
 
     -- =============================================================
@@ -421,7 +421,7 @@ WITH eliflg AS (
       -- ICD-10: F20.4, F31.3-F31.5, F32.x, F33.x, F34.1, F41.2, F43.2
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 4) IN ('F204','F313','F314','F315','F341','F412','F432') THEN 1
       WHEN icd_version = 10 AND SUBSTR(icd_code, 1, 3) IN ('F32','F33') THEN 1
-      ELSE 0 
+      ELSE 0
     END AS depress
 
   FROM `physionet-data.mimiciv_3_1_hosp.diagnoses_icd` icd
@@ -430,7 +430,7 @@ WITH eliflg AS (
 
 -- Aggregate flags to admission level
 eligrp AS (
-  SELECT 
+  SELECT
     hadm_id,
     MAX(chf) AS chf,
     MAX(arrhy) AS arrhy,
@@ -468,35 +468,35 @@ eligrp AS (
 )
 
 -- Final output with hierarchy rules applied
-SELECT 
+SELECT
   adm.subject_id,
   adm.hadm_id,
-  
+
   -- Individual comorbidity flags (with hierarchy rules)
   COALESCE(chf, 0) AS congestive_heart_failure,
   COALESCE(arrhy, 0) AS cardiac_arrhythmias,
   COALESCE(valve, 0) AS valvular_disease,
   COALESCE(pulmcirc, 0) AS pulmonary_circulation,
   COALESCE(perivasc, 0) AS peripheral_vascular,
-  
+
   -- Hypertension: combine uncomplicated and complicated
   CASE
     WHEN COALESCE(htn, 0) = 1 OR COALESCE(htncx, 0) = 1 THEN 1
-    ELSE 0 
+    ELSE 0
   END AS hypertension,
-  
+
   COALESCE(para, 0) AS paralysis,
   COALESCE(neuro, 0) AS other_neurological,
   COALESCE(chrnlung, 0) AS chronic_pulmonary,
-  
+
   -- Diabetes: complicated overrides uncomplicated
   CASE
     WHEN COALESCE(dmcx, 0) = 1 THEN 0
     WHEN COALESCE(dm, 0) = 1 THEN 1
-    ELSE 0 
+    ELSE 0
   END AS diabetes_uncomplicated,
   COALESCE(dmcx, 0) AS diabetes_complicated,
-  
+
   COALESCE(hypothy, 0) AS hypothyroidism,
   COALESCE(renlfail, 0) AS renal_failure,
   COALESCE(liver, 0) AS liver_disease,
@@ -504,14 +504,14 @@ SELECT
   COALESCE(aids, 0) AS aids,
   COALESCE(lymph, 0) AS lymphoma,
   COALESCE(mets, 0) AS metastatic_cancer,
-  
+
   -- Solid tumor: metastatic overrides non-metastatic
   CASE
     WHEN COALESCE(mets, 0) = 1 THEN 0
     WHEN COALESCE(tumor, 0) = 1 THEN 1
-    ELSE 0 
+    ELSE 0
   END AS solid_tumor,
-  
+
   COALESCE(arth, 0) AS rheumatoid_arthritis,
   COALESCE(coag, 0) AS coagulopathy,
   COALESCE(obese, 0) AS obesity,
@@ -523,11 +523,11 @@ SELECT
   COALESCE(drug, 0) AS drug_abuse,
   COALESCE(psych, 0) AS psychoses,
   COALESCE(depress, 0) AS depression,
-  
+
   -- Unweighted Elixhauser count (29 categories after hierarchy)
   (
     COALESCE(chf, 0) + COALESCE(arrhy, 0) + COALESCE(valve, 0) + COALESCE(pulmcirc, 0) +
-    COALESCE(perivasc, 0) + 
+    COALESCE(perivasc, 0) +
     CASE WHEN COALESCE(htn, 0) = 1 OR COALESCE(htncx, 0) = 1 THEN 1 ELSE 0 END +
     COALESCE(para, 0) + COALESCE(neuro, 0) + COALESCE(chrnlung, 0) +
     CASE WHEN COALESCE(dmcx, 0) = 1 THEN 0 WHEN COALESCE(dm, 0) = 1 THEN 1 ELSE 0 END +
@@ -538,7 +538,7 @@ SELECT
     COALESCE(lytes, 0) + COALESCE(bldloss, 0) + COALESCE(anemdef, 0) + COALESCE(alcohol, 0) +
     COALESCE(drug, 0) + COALESCE(psych, 0) + COALESCE(depress, 0)
   ) AS elixhauser_count,
-  
+
   -- van Walraven weighted score (Med Care 2009;47(6):626-33)
   -- Weights derived for in-hospital mortality prediction
   (

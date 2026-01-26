@@ -7,12 +7,12 @@
 --
 -- Reference for CCI:
 -- (1) Charlson ME, Pompei P, Ales KL, MacKenzie CR. (1987) A new method
--- of classifying prognostic comorbidity in longitudinal studies: 
+-- of classifying prognostic comorbidity in longitudinal studies:
 -- development and validation.J Chronic Dis; 40(5):373-83.
 --
 -- (2) Charlson M, Szatrowski TP, Peterson J, Gold J. (1994) Validation
 -- of a combined comorbidity index. J Clin Epidemiol; 47(11):1245-51.
--- 
+--
 -- Reference for ICD-9-CM and ICD-10 Coding Algorithms for Charlson
 -- Comorbidities:
 -- (3) Quan H, Sundararajan V, Halfon P, et al. Coding algorithms for
