@@ -140,11 +140,30 @@ class SetDatasetTool:
                 dataset_name=dataset_name,
             )
 
-        set_active_dataset(dataset_name)
-
-        # Get details about the new dataset
+        # Check backend compatibility before switching
         info = availability[dataset_name]
         ds_def = DatasetRegistry.get(dataset_name)
+
+        if ds_def and not ds_def.bigquery_dataset_ids and backend_name == "bigquery":
+            available = [
+                name
+                for name in availability
+                if (ds := DatasetRegistry.get(name)) and ds.bigquery_dataset_ids
+            ]
+            hint = (
+                f" BigQuery-compatible datasets: {', '.join(available)}."
+                if available
+                else ""
+            )
+            raise DatasetError(
+                f"Dataset '{dataset_name}' is not available on the BigQuery backend."
+                f"{hint}"
+                f" Or switch to DuckDB: set the M4_BACKEND environment variable"
+                f" or run `m4 backend duckdb`.",
+                dataset_name=dataset_name,
+            )
+
+        set_active_dataset(dataset_name)
 
         warnings: list[str] = []
 
@@ -153,9 +172,6 @@ class SetDatasetTool:
                 "Local database not found. "
                 "You may need to run initialization if using DuckDB."
             )
-
-        if ds_def and not ds_def.bigquery_dataset_ids and backend_name == "bigquery":
-            warnings.append("This dataset is not configured for BigQuery.")
 
         return {
             "dataset_name": dataset_name,

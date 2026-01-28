@@ -276,13 +276,13 @@ class TestSetDatasetTool:
 
                         assert "Local database not found" in result["warnings"][0]
 
-    def test_invoke_warns_no_bigquery_config(self, mock_availability, dummy_dataset):
-        """Test warning when dataset lacks BigQuery config but using BigQuery backend."""
+    def test_invoke_blocks_no_bigquery_config(self, mock_availability, dummy_dataset):
+        """Test that switching to a dataset without BigQuery config is blocked."""
         with patch(
             "m4.core.tools.management.detect_available_local_datasets",
             return_value=mock_availability,
         ):
-            with patch("m4.core.tools.management.set_active_dataset"):
+            with patch("m4.core.tools.management.set_active_dataset") as mock_set:
                 with patch("m4.core.tools.management.DatasetRegistry.get") as mock_reg:
                     mock_reg.return_value = DatasetDefinition(
                         name="mimic-iv-demo",
@@ -291,9 +291,14 @@ class TestSetDatasetTool:
                     with patch.dict("os.environ", {"M4_BACKEND": "bigquery"}):
                         tool = SetDatasetTool()
                         params = SetDatasetInput(dataset_name="mimic-iv-demo")
-                        result = tool.invoke(dummy_dataset, params)
 
-                        assert "not configured for BigQuery" in result["warnings"][0]
+                        with pytest.raises(DatasetError) as exc_info:
+                            tool.invoke(dummy_dataset, params)
+
+                        mock_set.assert_not_called()
+                        assert "not available on the BigQuery backend" in str(
+                            exc_info.value
+                        )
 
     def test_invoke_case_insensitive(self, mock_availability, dummy_dataset):
         """Test that dataset name lookup is case-insensitive."""
