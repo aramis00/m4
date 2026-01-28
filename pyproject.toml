@@ -38,21 +38,15 @@ dependencies = [
     "rich>=13.0.0", # For Typer's rich output
     "requests>=2.30.0",
     "beautifulsoup4>=4.12.0",
-    "polars[pyarrow]>=0.20.10",
-    "appdirs>=1.4.0",
-    "sqlalchemy>=2.0.0",
     "pandas>=2.0.0",
     "fastmcp>=0.1.0", # MCP server functionality
     "google-cloud-bigquery>=3.0.0", # BigQuery support
-    "db-dtypes>=1.0.0", # BigQuery data types
     "sqlparse>=0.4.0", # SQL parsing for security validation
     "pyjwt[crypto]>=2.8.0", # JWT token handling with cryptography support
     "cryptography>=41.0.0", # Cryptographic operations for JWT
     "python-jose[cryptography]>=3.3.0", # Additional JWT support with crypto
     "httpx>=0.24.0", # Modern HTTP client for OAuth2 token validation
     "duckdb>=1.4.1",
-    "matplotlib>=3.10.8",
-    "lifelines>=0.30.0",
 ]
 
 [dependency-groups]
