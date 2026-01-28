@@ -11,12 +11,12 @@ Architecture Note:
     for the protocol; the Python API receives them directly.
 """
 
-import os
 from dataclasses import dataclass
 from typing import Any
 
 from m4.config import (
     detect_available_local_datasets,
+    get_active_backend,
     get_active_dataset,
     set_active_dataset,
 )
@@ -70,7 +70,7 @@ class ListDatasetsTool:
         """
         active = get_active_dataset()
         availability = detect_available_local_datasets()
-        backend_name = os.getenv("M4_BACKEND", "duckdb")
+        backend_name = get_active_backend()
 
         datasets_info: dict[str, dict] = {}
 
@@ -131,7 +131,7 @@ class SetDatasetTool:
         """
         dataset_name = params.dataset_name.lower()
         availability = detect_available_local_datasets()
-        backend_name = os.getenv("M4_BACKEND", "duckdb")
+        backend_name = get_active_backend()
 
         if dataset_name not in availability:
             supported = ", ".join(availability.keys())
