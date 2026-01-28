@@ -366,11 +366,23 @@ def use_cmd(
         )
         raise typer.Exit(code=1)
 
-    # 2. Set it active immediately (don't block on files)
+    # 2. Block if dataset is incompatible with current backend
+    ds_def = DatasetRegistry.get(target)
+    backend_name = get_active_backend()
+
+    if ds_def and not ds_def.bigquery_dataset_ids and backend_name == "bigquery":
+        print_error_panel(
+            "Backend Incompatible",
+            f"Dataset '{target}' is not available on the BigQuery backend.",
+            hint="Switch to DuckDB first: m4 backend duckdb",
+        )
+        raise typer.Exit(code=1)
+
+    # 3. Set it active
     set_active_dataset(target)
     success(f"Active dataset set to '{target}'")
 
-    # 3. Warn if local files are missing (helpful info, not a blocker)
+    # 4. Warn if local files are missing (helpful info, not a blocker)
     if not availability["parquet_present"]:
         warning(f"Local Parquet files not found at {availability['parquet_root']}")
         console.print(
@@ -382,15 +394,9 @@ def use_cmd(
     else:
         info("Local: Available", prefix="status")
 
-    # 4. Check BigQuery support
-    ds_def = DatasetRegistry.get(target)
+    # 5. Show BigQuery status
     if ds_def:
-        if not ds_def.bigquery_dataset_ids:
-            warning("This dataset is not configured for BigQuery")
-            console.print(
-                "  [muted]If you're using the BigQuery backend, queries will fail.[/muted]"
-            )
-        else:
+        if ds_def.bigquery_dataset_ids:
             info(
                 f"BigQuery: Available (Project: {ds_def.bigquery_project_id})",
                 prefix="status",
@@ -415,6 +421,21 @@ def backend_cmd(
         )
         raise typer.Exit(code=1)
 
+    # Block if current dataset is incompatible with new backend
+    if target == "bigquery":
+        try:
+            active = get_active_dataset()
+            ds_def = DatasetRegistry.get(active)
+            if ds_def and not ds_def.bigquery_dataset_ids:
+                print_error_panel(
+                    "Dataset Incompatible",
+                    f"Current dataset '{active}' is not available on BigQuery.",
+                    hint="Switch dataset first: m4 use <dataset>",
+                )
+                raise typer.Exit(code=1)
+        except ValueError:
+            pass  # No active dataset set
+
     set_active_backend(target)
     success(f"Active backend set to '{target}'")
 
@@ -425,20 +446,6 @@ def backend_cmd(
             "  [muted]Ensure GOOGLE_APPLICATION_CREDENTIALS is set or run:[/muted]"
         )
         console.print("  [command]gcloud auth application-default login[/command]")
-
-        # Warn if current dataset doesn't support BigQuery
-        try:
-            active = get_active_dataset()
-            ds_def = DatasetRegistry.get(active)
-            if ds_def and not ds_def.bigquery_dataset_ids:
-                console.print()
-                warning(f"Current dataset '{active}' is not available in BigQuery")
-                console.print(
-                    "  [muted]Queries will fail. Switch dataset with:[/muted] "
-                    "[command]m4 use <dataset>[/command]"
-                )
-        except ValueError:
-            pass  # No active dataset set
     else:
         info("DuckDB uses local database files")
         console.print(

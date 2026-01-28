@@ -274,10 +274,10 @@ def test_backend_bigquery_happy_path(mock_registry, mock_get_dataset, mock_set_b
 @patch("m4.cli.set_active_backend")
 @patch("m4.cli.get_active_dataset")
 @patch("m4.cli.DatasetRegistry.get")
-def test_backend_bigquery_warns_unsupported_dataset(
+def test_backend_bigquery_blocks_unsupported_dataset(
     mock_registry, mock_get_dataset, mock_set_backend
 ):
-    """Test that bigquery backend warns when current dataset doesn't support BQ."""
+    """Test that switching to bigquery is blocked when dataset doesn't support BQ."""
     # Mock a dataset that doesn't support BigQuery
     mock_get_dataset.return_value = "custom-dataset"
     mock_ds = MagicMock()
@@ -286,10 +286,10 @@ def test_backend_bigquery_warns_unsupported_dataset(
 
     result = runner.invoke(app, ["backend", "bigquery"])
 
-    assert result.exit_code == 0
-    assert "Active backend set to 'bigquery'" in result.stdout
-    assert "is not available in BigQuery" in result.stdout
-    mock_set_backend.assert_called_once_with("bigquery")
+    assert result.exit_code == 1
+    assert "Dataset Incompatible" in result.stdout
+    assert "not available on BigQuery" in result.stdout
+    mock_set_backend.assert_not_called()
 
 
 def test_backend_invalid_choice():
@@ -304,7 +304,8 @@ def test_backend_invalid_choice():
 
 
 @patch("m4.cli.set_active_backend")
-def test_backend_case_insensitive(mock_set_backend):
+@patch("m4.cli.get_active_dataset", side_effect=ValueError("No active dataset"))
+def test_backend_case_insensitive(mock_get_dataset, mock_set_backend):
     """Test that backend choice is case-insensitive."""
     result = runner.invoke(app, ["backend", "BIGQUERY"])
 
