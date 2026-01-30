@@ -494,32 +494,36 @@ class TestModalityChecking:
             ):
                 with patch("m4.core.tools.management.set_active_dataset"):
                     with patch(
-                        "m4.core.tools.management.DatasetRegistry.get",
-                        return_value=target_ds,
+                        "m4.config.get_active_dataset",
+                        return_value="test-dataset",
                     ):
                         with patch(
-                            "m4.mcp_server.DatasetRegistry.get",
+                            "m4.core.tools.management.DatasetRegistry.get",
                             return_value=target_ds,
                         ):
                             with patch(
-                                "m4.core.tools.management.get_active_backend",
-                                return_value="duckdb",
+                                "m4.mcp_server.DatasetRegistry.get",
+                                return_value=target_ds,
                             ):
-                                async with Client(mcp) as client:
-                                    result = await client.call_tool(
-                                        "set_dataset",
-                                        {"dataset_name": "test-dataset"},
-                                    )
-                                    result_text = str(result)
+                                with patch(
+                                    "m4.core.tools.management.get_active_backend",
+                                    return_value="duckdb",
+                                ):
+                                    async with Client(mcp) as client:
+                                        result = await client.call_tool(
+                                            "set_dataset",
+                                            {"dataset_name": "test-dataset"},
+                                        )
+                                        result_text = str(result)
 
-                                    # Verify snapshot is included
-                                    assert "Active dataset" in result_text
-                                    assert "test-dataset" in result_text
-                                    assert "Modalities" in result_text
-                                    assert "Supported tools" in result_text
+                                        # Verify snapshot is included
+                                        assert "Active dataset" in result_text
+                                        assert "test-dataset" in result_text
+                                        assert "Modalities" in result_text
+                                        assert "Supported tools" in result_text
 
-                                    # Tools should be sorted alphabetically
-                                    assert "execute_query" in result_text
+                                        # Tools should be sorted alphabetically
+                                        assert "execute_query" in result_text
 
     @pytest.mark.asyncio
     async def test_set_dataset_invalid_returns_error_without_snapshot(self):
