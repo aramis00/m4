@@ -1,5 +1,4 @@
 import subprocess
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -46,38 +45,40 @@ def test_unknown_command_reports_error():
     )
 
 
-@patch("m4.cli.init_duckdb_from_parquet")
-@patch("m4.cli.verify_table_rowcount")
-def test_init_command_duckdb_custom_path(mock_rowcount, mock_init):
+def test_init_command_duckdb_custom_path(tmp_path):
     """Test that m4 init --db-path uses custom database path override and DuckDB flow."""
-    mock_init.return_value = True
-    mock_rowcount.return_value = 100
+    # Create a temp parquet dir with a dummy file so presence detection works
+    pq_dir = tmp_path / "parquet" / "mimic-iv-demo"
+    pq_dir.mkdir(parents=True)
+    (pq_dir / "test.parquet").touch()
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        custom_db_path = Path(temp_dir) / "custom_mimic.duckdb"
-        resolved_custom_db_path = custom_db_path.resolve()
-        # Also ensure a deterministic parquet path exists for the dataset discovery.
-        with patch("m4.cli.get_dataset_parquet_root") as mock_parquet_root:
-            repo_root = Path(__file__).resolve().parents[1]
-            mock_parquet_root.return_value = repo_root / "m4_data/parquet/mimic-iv-demo"
-            with patch.object(Path, "exists", return_value=True):
-                result = runner.invoke(
-                    app, ["init", "mimic-iv-demo", "--db-path", str(custom_db_path)]
-                )
+    custom_db_path = tmp_path / "custom_mimic.duckdb"
+    resolved_custom_db_path = custom_db_path.resolve()
 
-        assert result.exit_code == 0
-        # With Rich panels, paths may be split across lines, check for parts of filename
-        # The filename "custom_mimic.duckdb" may be wrapped as "custom_mimi" + "c.duckdb"
-        assert "custom_mimi" in result.stdout and ".duckdb" in result.stdout
-        # Now uses "Database:" instead of "DuckDB path:"
-        assert "Database:" in result.stdout
-
-        # initializer should be called with the resolved path
-        mock_init.assert_called_once_with(
-            dataset_name="mimic-iv-demo", db_target_path=resolved_custom_db_path
+    with (
+        patch("m4.config._find_project_root_from_cwd", return_value=Path.cwd()),
+        patch("m4.cli.get_dataset_parquet_root", return_value=pq_dir),
+        patch("m4.cli.init_duckdb_from_parquet", return_value=True) as mock_init,
+        patch("m4.cli.verify_table_rowcount", return_value=100) as mock_rowcount,
+        patch("m4.cli.set_active_dataset"),
+    ):
+        result = runner.invoke(
+            app, ["init", "mimic-iv-demo", "--db-path", str(custom_db_path)]
         )
-        # verification query should be attempted
-        mock_rowcount.assert_called()
+
+    assert result.exit_code == 0
+    # With Rich panels, paths may be split across lines, check for parts of filename
+    # The filename "custom_mimic.duckdb" may be wrapped as "custom_mimi" + "c.duckdb"
+    assert "custom_mimi" in result.stdout and ".duckdb" in result.stdout
+    # Now uses "Database:" instead of "DuckDB path:"
+    assert "Database:" in result.stdout
+
+    # initializer should be called with the resolved path
+    mock_init.assert_called_once_with(
+        dataset_name="mimic-iv-demo", db_target_path=resolved_custom_db_path
+    )
+    # verification query should be attempted
+    mock_rowcount.assert_called()
 
 
 def test_config_validation_bigquery_with_db_path():
