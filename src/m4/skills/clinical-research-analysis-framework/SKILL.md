@@ -432,10 +432,10 @@ The `analysis_log.md` file maintains a complete audit trail:
 
 ## Step 01: Cohort Definition
 - **Script:** `01_cohort_definition_20250203.py`
-- **Outputs:** 
+- **Outputs:**
   - `01_cohort_flowchart_20250203.png`
   - `01_cohort_data_20250203.csv` (n=12,847)
-- **Summary:** Started 58,976 admissions → excluded <18yo (8,234), 
+- **Summary:** Started 58,976 admissions → excluded <18yo (8,234),
   LOS<24h (15,102), missing outcome (3,201) → final n=12,847
 - **Decision:** Approved. Proceed to descriptives.
 - **Date:** 2025-02-03

@@ -103,7 +103,7 @@ Data from 2008-2016 → Train
 Data from 2017-2019 → Test
 ```
 
-**Why:** 
+**Why:**
 - Simulates prospective deployment
 - Accounts for temporal drift (practice changes, ICD-10 transition)
 - More honest estimate of future performance
