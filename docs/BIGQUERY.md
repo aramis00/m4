@@ -5,7 +5,7 @@ Use Google Cloud BigQuery to access full clinical datasets without downloading f
 ## Prerequisites
 
 1. **Google Cloud account** with BigQuery access
-2. **PhysioNet credentialed access** for MIMIC-IV or eICU ([apply here](https://physionet.org/))
+2. **PhysioNet credentialed access** for MIMIC-IV or eICU ([apply here](https://physionet.org/)). Scroll to the bottom of the page and request access to the BigQuery dataset.
 3. **gcloud CLI** installed ([installation guide](https://cloud.google.com/sdk/docs/install))
 
 ## Setup
@@ -18,7 +18,13 @@ gcloud auth application-default login
 
 This opens a browser to complete authentication.
 
-### 2. Configure M4 for BigQuery
+### 2. Switch to BigQuery backend
+
+```bash
+m4 backend bigquery
+```
+
+### 3. Configure your MCP client
 
 **Claude Desktop:**
 ```bash
@@ -30,15 +36,15 @@ m4 config claude --backend bigquery --project-id YOUR_PROJECT_ID
 m4 config --backend bigquery --project-id YOUR_PROJECT_ID
 ```
 
-Replace `YOUR_PROJECT_ID` with your Google Cloud project ID.
+Replace `YOUR_PROJECT_ID` with your own billing project for BigQuery usage, not the PhysioNet dataset project. The variable is mandatory to ensure billing is correctly attributed.
 
-### 3. Set the dataset
+### 4. Set the dataset
 
 ```bash
 m4 use mimic-iv    # or eicu
 ```
 
-### 4. Restart your MCP client
+### 5. Restart your MCP client
 
 The AI client will now query BigQuery directly.
 
@@ -50,11 +56,24 @@ M4 uses these PhysioNet BigQuery datasets:
 |---------|-----------------|-------------|
 | mimic-iv | `physionet-data` | `mimiciv_3_1_hosp`, `mimiciv_3_1_icu` |
 | mimic-iv-note | `physionet-data` | `mimiciv_note` |
+| mimic-iv-ed | `physionet-data` | `mimiciv_ed` |
 | eicu | `physionet-data` | `eicu_crd` |
+
+## Derived Tables on BigQuery
+
+BigQuery users already have access to ~63 pre-computed derived concept tables (SOFA scores, sepsis cohorts, KDIGO AKI staging, medications, etc.) via `physionet-data.mimiciv_derived`. These tables are maintained by PhysioNet and are the same concepts that local DuckDB users materialize with `m4 init-derived mimic-iv`.
+
+You do **not** need to run `m4 init-derived` when using BigQuery -- the tables are already available. Query them directly:
+
+```sql
+SELECT * FROM mimiciv_derived.sofa LIMIT 10
+```
+
+The `mimiciv_derived` schema is accessible alongside the standard `mimiciv_hosp` and `mimiciv_icu` schemas.
 
 ## Environment Variables
 
-You can also configure BigQuery via environment variables:
+You can also override the backend via environment variables (these take priority over `m4 backend`):
 
 ```bash
 export M4_BACKEND=bigquery

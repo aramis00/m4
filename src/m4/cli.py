@@ -7,12 +7,17 @@ from typing import Annotated
 import typer
 
 from m4.config import (
+    VALID_BACKENDS,
     detect_available_local_datasets,
+    get_active_backend,
     get_active_dataset,
+    get_bigquery_project_id,
     get_dataset_parquet_root,
     get_default_database_path,
     logger,
+    set_active_backend,
     set_active_dataset,
+    set_bigquery_project_id,
 )
 from m4.console import (
     console,
@@ -22,6 +27,7 @@ from m4.console import (
     print_command,
     print_dataset_status,
     print_datasets_table,
+    print_derived_detail,
     print_error_panel,
     print_init_complete,
     print_key_value,
@@ -31,6 +37,17 @@ from m4.console import (
     warning,
 )
 from m4.core.datasets import DatasetRegistry
+from m4.core.derived.builtins import (
+    get_tables_by_category,
+    has_derived_support,
+    list_builtins,
+)
+from m4.core.derived.materializer import (
+    get_derived_table_count,
+    list_materialized_tables,
+    materialize_all,
+)
+from m4.core.exceptions import DatasetError
 from m4.data_io import (
     compute_parquet_dir_size,
     convert_csv_to_parquet,
@@ -338,6 +355,173 @@ def dataset_init_cmd(
     # Set active dataset to match init target
     set_active_dataset(dataset_key)
 
+    # Offer to materialize derived tables for supported datasets
+    if has_derived_support(dataset_key) and get_active_backend() == "duckdb":
+        existing_derived = get_derived_table_count(final_db_path)
+
+        if existing_derived > 0 and not force:
+            # Already materialized — skip prompt, just notify
+            console.print()
+            info(
+                f"Derived tables already materialized ({existing_derived} tables). "
+                "Use --force to recreate."
+            )
+        else:
+            # No existing tables → prompt; --force → recreate without prompt
+            if force and existing_derived > 0:
+                do_materialize = True
+            else:
+                console.print()
+                do_materialize = typer.confirm(
+                    "Materialize derived tables? "
+                    "(SOFA, sepsis3, KDIGO, scores, medications, etc.)",
+                    default=False,
+                )
+
+            if do_materialize:
+                try:
+                    materialize_all(dataset_key, final_db_path)
+                except RuntimeError as e:
+                    if "locked by another process" in str(e):
+                        print_error_panel(
+                            "Database Locked",
+                            str(e),
+                            hint="If the M4 MCP server is running, stop it "
+                            "before materializing derived tables.",
+                        )
+                    else:
+                        error(f"Derived table materialization failed: {e}")
+                    console.print(
+                        "  [muted]You can retry later with:[/muted] "
+                        f"[command]m4 init-derived {dataset_key}[/command]"
+                    )
+                except Exception as e:
+                    error(f"Derived table materialization failed: {e}")
+                    console.print(
+                        "  [muted]You can retry later with:[/muted] "
+                        f"[command]m4 init-derived {dataset_key}[/command]"
+                    )
+
+
+@app.command("init-derived")
+def init_derived_cmd(
+    dataset_name: Annotated[
+        str,
+        typer.Argument(
+            help="Dataset to materialize derived tables for.",
+            metavar="DATASET_NAME",
+        ),
+    ],
+    list_only: Annotated[
+        bool,
+        typer.Option(
+            "--list",
+            "-l",
+            help="List available derived tables without materializing.",
+        ),
+    ] = False,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Force re-materialization even if derived tables already exist.",
+        ),
+    ] = False,
+):
+    """Materialize built-in derived tables for a dataset.
+
+    Creates clinically validated concept tables (SOFA scores, sepsis cohorts,
+    KDIGO staging, etc.) from vendored mimic-code SQL. These tables become
+    queryable as mimiciv_derived.* via standard SQL.
+
+    On BigQuery, derived tables already exist — no materialization needed.
+    """
+    dataset_key = dataset_name.lower()
+    ds = DatasetRegistry.get(dataset_key)
+
+    if not ds:
+        supported = ", ".join([d.name for d in DatasetRegistry.list_all()])
+        print_error_panel(
+            "Dataset Not Found",
+            f"Dataset '{dataset_name}' is not supported or not configured.",
+            hint=f"Supported datasets: {supported}",
+        )
+        raise typer.Exit(code=1)
+
+    # Block unsupported datasets
+    if dataset_key in ("mimic-iv-demo",):
+        print_error_panel(
+            "Not Supported",
+            f"Derived tables are not supported for '{dataset_key}'.",
+            hint=(
+                "The demo dataset has only 100 patients; many derived concepts "
+                "produce empty or unreliable results. Use the full mimic-iv dataset."
+            ),
+        )
+        raise typer.Exit(code=1)
+
+    # Block if BigQuery backend
+    if get_active_backend() == "bigquery":
+        info(
+            "BigQuery backend active — built-in derived tables are already available "
+            "on physionet-data.mimiciv_derived. No materialization needed."
+        )
+        return
+
+    if list_only:
+        try:
+            names = list_builtins(dataset_key)
+            console.print(f"\n[bold]Available derived tables for {dataset_key}:[/bold]")
+            console.print(f"[muted]({len(names)} tables)[/muted]\n")
+            for name in names:
+                console.print(f"  {name}")
+        except ValueError as e:
+            error(str(e))
+            raise typer.Exit(code=1)
+        return
+
+    db_path = get_default_database_path(dataset_key)
+    if not db_path or not db_path.exists():
+        print_error_panel(
+            "Database Not Found",
+            f"No DuckDB database found for '{dataset_key}'.",
+            hint=f"Initialize first: m4 init {dataset_key}",
+        )
+        raise typer.Exit(code=1)
+
+    # Skip if derived tables already exist (unless --force)
+    existing_count = get_derived_table_count(db_path)
+    if existing_count > 0 and not force:
+        info(
+            f"Derived tables already materialized ({existing_count} tables). "
+            "Use --force to recreate."
+        )
+        return
+
+    try:
+        created = materialize_all(dataset_key, db_path)
+        success(f"Created {len(created)} derived tables in mimiciv_derived schema")
+    except ValueError as e:
+        error(str(e))
+        raise typer.Exit(code=1)
+    except RuntimeError as e:
+        if "locked by another process" in str(e):
+            print_error_panel(
+                "Database Locked",
+                str(e),
+                hint="If the M4 MCP server is running, stop it before "
+                "materializing derived tables.",
+            )
+        else:
+            error(f"Materialization failed: {e}")
+            logger.error(f"Derived table materialization error: {e}", exc_info=True)
+        raise typer.Exit(code=1)
+    except Exception as e:
+        error(f"Materialization failed: {e}")
+        logger.error(f"Derived table materialization error: {e}", exc_info=True)
+        raise typer.Exit(code=1)
+
 
 @app.command("use")
 def use_cmd(
@@ -363,11 +547,23 @@ def use_cmd(
         )
         raise typer.Exit(code=1)
 
-    # 2. Set it active immediately (don't block on files)
+    # 2. Block if dataset is incompatible with current backend
+    ds_def = DatasetRegistry.get(target)
+    backend_name = get_active_backend()
+
+    if ds_def and not ds_def.bigquery_dataset_ids and backend_name == "bigquery":
+        print_error_panel(
+            "Backend Incompatible",
+            f"Dataset '{target}' is not available on the BigQuery backend.",
+            hint="Switch to DuckDB first: m4 backend duckdb",
+        )
+        raise typer.Exit(code=1)
+
+    # 3. Set it active
     set_active_dataset(target)
     success(f"Active dataset set to '{target}'")
 
-    # 3. Warn if local files are missing (helpful info, not a blocker)
+    # 4. Warn if local files are missing (helpful info, not a blocker)
     if not availability["parquet_present"]:
         warning(f"Local Parquet files not found at {availability['parquet_root']}")
         console.print(
@@ -379,19 +575,91 @@ def use_cmd(
     else:
         info("Local: Available", prefix="status")
 
-    # 4. Check BigQuery support
-    ds_def = DatasetRegistry.get(target)
+    # 5. Show BigQuery status
     if ds_def:
-        if not ds_def.bigquery_dataset_ids:
-            warning("This dataset is not configured for BigQuery")
-            console.print(
-                "  [muted]If you're using the BigQuery backend, queries will fail.[/muted]"
-            )
-        else:
+        if ds_def.bigquery_dataset_ids:
             info(
                 f"BigQuery: Available (Project: {ds_def.bigquery_project_id})",
                 prefix="status",
             )
+
+
+@app.command("backend")
+def backend_cmd(
+    target: Annotated[
+        str,
+        typer.Argument(help="Backend to use: duckdb or bigquery", metavar="BACKEND"),
+    ],
+    project_id: Annotated[
+        str | None,
+        typer.Option(
+            "--project-id",
+            help="Google Cloud project ID for billing (bigquery only)",
+        ),
+    ] = None,
+):
+    """Set the active backend (duckdb or bigquery)."""
+    target = target.lower()
+
+    if target not in VALID_BACKENDS:
+        print_error_panel(
+            "Invalid Backend",
+            f"Backend '{target}' is not valid.",
+            hint=f"Valid backends: {', '.join(sorted(VALID_BACKENDS))}",
+        )
+        raise typer.Exit(code=1)
+
+    # Reject --project-id for duckdb
+    if target == "duckdb" and project_id:
+        error("--project-id can only be used with bigquery backend")
+        raise typer.Exit(code=1)
+
+    # Block if current dataset is incompatible with new backend
+    if target == "bigquery":
+        try:
+            active = get_active_dataset()
+            ds_def = DatasetRegistry.get(active)
+            if ds_def and not ds_def.bigquery_dataset_ids:
+                print_error_panel(
+                    "Dataset Incompatible",
+                    f"Current dataset '{active}' is not available on BigQuery.",
+                    hint="Switch dataset first: m4 use <dataset>",
+                )
+                raise typer.Exit(code=1)
+        except (ValueError, DatasetError):
+            pass  # No active dataset set
+
+    # BigQuery requires a project ID — either provided now or already in config
+    if target == "bigquery":
+        effective_project_id = project_id or get_bigquery_project_id()
+        if not effective_project_id:
+            print_error_panel(
+                "Project ID Required",
+                "BigQuery backend requires a project ID.",
+                hint="Set it with: m4 backend bigquery --project-id <ID>",
+            )
+            raise typer.Exit(code=1)
+
+    set_active_backend(target)
+
+    # Persist project ID if provided
+    if project_id:
+        set_bigquery_project_id(project_id)
+
+    success(f"Active backend set to '{target}'")
+
+    # Show helpful context
+    if target == "bigquery":
+        info("BigQuery requires valid Google Cloud credentials")
+        console.print(
+            "  [muted]Ensure GOOGLE_APPLICATION_CREDENTIALS is set or run:[/muted]"
+        )
+        console.print("  [command]gcloud auth application-default login[/command]")
+    else:
+        info("DuckDB uses local database files")
+        console.print(
+            "  [muted]Run[/muted] [command]m4 init[/command] [muted]if you haven't initialized your dataset[/muted]"
+        )
 
 
 @app.command("status")
@@ -404,8 +672,53 @@ def status_cmd(
             help="Show all supported datasets in a table view.",
         ),
     ] = False,
+    show_derived: Annotated[
+        bool,
+        typer.Option(
+            "--derived",
+            "-d",
+            help="Show detailed derived table status grouped by category.",
+        ),
+    ] = False,
 ):
     """Show active dataset status. Use --all for all supported datasets."""
+
+    # --derived: detailed per-table view (early return)
+    if show_derived:
+        active = get_active_dataset()
+        if not active:
+            console.print("[warning]No active dataset set.[/warning]")
+            raise typer.Exit()
+
+        if not has_derived_support(active):
+            console.print(
+                f"[muted]Derived tables are not available for '{active}'.[/muted]"
+            )
+            raise typer.Exit()
+
+        backend = get_active_backend()
+        if backend == "bigquery":
+            info(
+                "BigQuery backend active — derived tables are available "
+                "as physionet-data.mimiciv_derived.*"
+            )
+            raise typer.Exit()
+
+        db_path = get_default_database_path(active)
+        if not db_path or not db_path.exists():
+            console.print(
+                f"[warning]No DuckDB database found for '{active}'.[/warning]"
+            )
+            console.print(
+                f"  [muted]Initialize with:[/muted] [command]m4 init {active}[/command]"
+            )
+            raise typer.Exit()
+
+        categories = get_tables_by_category(active)
+        materialized = list_materialized_tables(db_path)
+        print_derived_detail(active, categories, materialized)
+        return
+
     print_logo(show_tagline=False, show_version=True)
     console.print()
 
@@ -433,6 +746,18 @@ def status_cmd(
                 except Exception:
                     pass
 
+            # Get derived counts if supported and db present
+            derived_materialized = None
+            derived_total = None
+            if has_derived_support(label) and ds_info["db_present"]:
+                try:
+                    derived_total = len(list_builtins(label))
+                    derived_materialized = get_derived_table_count(
+                        Path(ds_info["db_path"])
+                    )
+                except Exception:
+                    pass
+
             datasets_info.append(
                 {
                     "name": label,
@@ -440,6 +765,8 @@ def status_cmd(
                     "db_present": ds_info["db_present"],
                     "bigquery_available": bigquery_available,
                     "parquet_size_gb": parquet_size_gb,
+                    "derived_materialized": derived_materialized,
+                    "derived_total": derived_total,
                 }
             )
 
@@ -459,6 +786,14 @@ def status_cmd(
         return
 
     console.print(f"[bold]Active dataset:[/bold] [success]{active}[/success]")
+
+    backend = get_active_backend()
+    backend_label = backend
+    if backend == "bigquery":
+        bq_project = get_bigquery_project_id()
+        if bq_project:
+            backend_label = f"{backend} ({bq_project})"
+    console.print(f"[bold]Backend:[/bold] [success]{backend_label}[/success]")
 
     # Get info for active dataset
     ds_info = availability.get(active)
@@ -498,6 +833,18 @@ def status_cmd(
                     f"  [muted]Try:[/muted] [command]m4 init {active} --force[/command]"
                 )
 
+    # Gather derived table info
+    derived_has_support = has_derived_support(active)
+    derived_is_bigquery = bigquery_available and backend == "bigquery"
+    derived_materialized = None
+    derived_total = None
+    if derived_has_support and not derived_is_bigquery and ds_info["db_present"]:
+        try:
+            derived_total = len(list_builtins(active))
+            derived_materialized = get_derived_table_count(Path(ds_info["db_path"]))
+        except Exception:
+            pass
+
     print_dataset_status(
         name=active,
         parquet_present=ds_info["parquet_present"],
@@ -508,6 +855,10 @@ def status_cmd(
         bigquery_available=bigquery_available,
         row_count=row_count,
         is_active=True,
+        derived_materialized=derived_materialized,
+        derived_total=derived_total,
+        derived_has_support=derived_has_support,
+        derived_is_bigquery=derived_is_bigquery,
     )
 
 
@@ -558,6 +909,110 @@ def _prompt_select_tools() -> list[str]:
     return selected_tools
 
 
+def _prompt_select_skills() -> tuple[
+    list[str] | None, list[str] | None, list[str] | None
+]:
+    """Interactive prompt to filter which skills to install.
+
+    Returns:
+        Tuple of (skill_names, tiers, categories) — all None means install all.
+    """
+    from m4.skills import get_available_skills
+
+    all_skills = get_available_skills()
+    total = len(all_skills)
+
+    # Collect category and tier counts
+    cat_counts: dict[str, int] = {}
+    tier_counts: dict[str, int] = {}
+    for s in all_skills:
+        cat_counts[s.category] = cat_counts.get(s.category, 0) + 1
+        tier_counts[s.tier] = tier_counts.get(s.tier, 0) + 1
+
+    console.print()
+    console.print("[bold]Install all skills or filter?[/bold]")
+    console.print(f"  [bold]1.[/bold] All skills ({total} available)")
+    console.print("  [bold]2.[/bold] Filter by category")
+    console.print("  [bold]3.[/bold] Filter by tier")
+    console.print("  [bold]4.[/bold] Select individual skills")
+    console.print()
+
+    choice = typer.prompt("Selection", default="1", show_default=True)
+
+    if choice == "1":
+        return None, None, None
+
+    if choice == "2":
+        # Show categories
+        cats = sorted(cat_counts.keys())
+        console.print()
+        console.print("[bold]Select categories:[/bold]")
+        console.print("[muted](Enter comma-separated numbers)[/muted]")
+        console.print()
+        for i, cat in enumerate(cats, 1):
+            console.print(f"  [bold]{i}.[/bold] {cat} ({cat_counts[cat]} skills)")
+        console.print()
+        sel = typer.prompt("Categories", default="1")
+        selected_cats = []
+        try:
+            for idx in (int(x.strip()) for x in sel.split(",")):
+                if 1 <= idx <= len(cats):
+                    selected_cats.append(cats[idx - 1])
+        except ValueError:
+            pass
+        if selected_cats:
+            return None, None, selected_cats
+        return None, None, None
+
+    if choice == "3":
+        # Show tiers
+        tiers = sorted(tier_counts.keys())
+        console.print()
+        console.print("[bold]Select tiers:[/bold]")
+        console.print("[muted](Enter comma-separated numbers)[/muted]")
+        console.print()
+        for i, t in enumerate(tiers, 1):
+            console.print(f"  [bold]{i}.[/bold] {t} ({tier_counts[t]} skills)")
+        console.print()
+        sel = typer.prompt("Tiers", default="1")
+        selected_tiers = []
+        try:
+            for idx in (int(x.strip()) for x in sel.split(",")):
+                if 1 <= idx <= len(tiers):
+                    selected_tiers.append(tiers[idx - 1])
+        except ValueError:
+            pass
+        if selected_tiers:
+            return None, selected_tiers, None
+        return None, None, None
+
+    if choice == "4":
+        # Show all skills
+        console.print()
+        console.print("[bold]Select skills:[/bold]")
+        console.print("[muted](Enter comma-separated numbers)[/muted]")
+        console.print()
+        for i, s in enumerate(all_skills, 1):
+            console.print(
+                f"  [bold]{i:2d}.[/bold] {s.name:<30s} {s.category:<10s} {s.tier}"
+            )
+        console.print()
+        sel = typer.prompt("Skills")
+        selected_names = []
+        try:
+            for idx in (int(x.strip()) for x in sel.split(",")):
+                if 1 <= idx <= len(all_skills):
+                    selected_names.append(all_skills[idx - 1].name)
+        except ValueError:
+            pass
+        if selected_names:
+            return selected_names, None, None
+        return None, None, None
+
+    # Default: install all
+    return None, None, None
+
+
 @app.command("skills")
 def skills_cmd(
     tools: Annotated[
@@ -576,6 +1031,29 @@ def skills_cmd(
             help="List installed skills across all tools.",
         ),
     ] = False,
+    skill_names: Annotated[
+        str | None,
+        typer.Option(
+            "--skills",
+            "-s",
+            help="Comma-separated skill names to install (e.g., sofa-score,sepsis-3-cohort).",
+        ),
+    ] = None,
+    tier_filter: Annotated[
+        str | None,
+        typer.Option(
+            "--tier",
+            help="Comma-separated tiers to install (validated,expert,community).",
+        ),
+    ] = None,
+    category_filter: Annotated[
+        str | None,
+        typer.Option(
+            "--category",
+            "-c",
+            help="Comma-separated categories to install (clinical,system).",
+        ),
+    ] = None,
 ):
     """
     Install M4 skills for AI coding tools.
@@ -585,16 +1063,28 @@ def skills_cmd(
 
     Examples:
 
-    • m4 skills                     # Interactive tool selection
+    • m4 skills                              # Interactive selection
 
-    • m4 skills --tools claude,cursor  # Install for specific tools
+    • m4 skills --tools claude,cursor        # Install all skills for specific tools
 
-    • m4 skills --list              # Show installed skills
+    • m4 skills --tools claude --tier validated  # Only validated skills
+
+    • m4 skills --tools claude --category clinical  # Only clinical skills
+
+    • m4 skills --tools claude --skills sofa-score,m4-api  # Specific skills
+
+    • m4 skills --list                       # Show installed skills
     """
-    from m4.skills import AI_TOOLS, get_all_installed_skills, install_skills
+    from m4.skills import (
+        AI_TOOLS,
+        get_all_installed_skills,
+        get_available_skills,
+        install_skills,
+    )
+    from m4.skills.installer import _parse_skill_metadata
 
     if list_installed:
-        # Show installed skills
+        # Show installed skills with metadata
         installed = get_all_installed_skills()
 
         if not installed:
@@ -603,16 +1093,49 @@ def skills_cmd(
             console.print("[muted]Install with:[/muted] [command]m4 skills[/command]")
             return
 
+        console.print()
         console.print("[bold]Installed M4 skills:[/bold]")
         console.print()
 
-        for tool_name, skill_names in installed.items():
+        for tool_name, skill_name_list in installed.items():
             tool = AI_TOOLS[tool_name]
-            console.print(f"  [success]●[/success] {tool.display_name}")
-            for skill in skill_names:
-                console.print(f"    [muted]└─[/muted] {skill}")
+            console.print(
+                f"  [success]●[/success] {tool.display_name} "
+                f"({len(skill_name_list)} skills)"
+            )
+            # Parse metadata from installed skills for richer output
+            skills_dir = Path.cwd() / tool.skills_dir
+            for skill_name in sorted(skill_name_list):
+                skill_dir = skills_dir / skill_name
+                meta = _parse_skill_metadata(skill_dir)
+                if meta:
+                    console.print(
+                        f"    [muted]└─[/muted] {meta.name:<30s} "
+                        f"{meta.category:<10s} {meta.tier}"
+                    )
+                else:
+                    console.print(f"    [muted]└─[/muted] {skill_name}")
 
         return
+
+    # Parse filter flags
+    skills_list = (
+        [s.strip() for s in skill_names.split(",") if s.strip()]
+        if skill_names
+        else None
+    )
+    tier_list = (
+        [t.strip().lower() for t in tier_filter.split(",") if t.strip()]
+        if tier_filter
+        else None
+    )
+    category_list = (
+        [c.strip().lower() for c in category_filter.split(",") if c.strip()]
+        if category_filter
+        else None
+    )
+
+    has_cli_filters = skills_list or tier_list or category_list
 
     # Determine which tools to install for
     if tools:
@@ -628,12 +1151,36 @@ def skills_cmd(
         # Interactive selection
         selected_tools = _prompt_select_tools()
 
+    # Interactive skill filtering (only when no CLI filters provided)
+    if not has_cli_filters and not tools:
+        i_names, i_tiers, i_cats = _prompt_select_skills()
+        if i_names:
+            skills_list = i_names
+        if i_tiers:
+            tier_list = i_tiers
+        if i_cats:
+            category_list = i_cats
+
+    # Show what will be installed
+    selected = get_available_skills(
+        tier=tier_list, category=category_list, names=skills_list
+    )
+
+    if not selected:
+        warning("No skills match the given filters.")
+        return
+
     # Install skills
     console.print()
-    info(f"Installing skills for: {', '.join(selected_tools)}")
+    info(f"Installing {len(selected)} skill(s) for: {', '.join(selected_tools)}")
 
     try:
-        results = install_skills(tools=selected_tools)
+        results = install_skills(
+            tools=selected_tools,
+            skills=skills_list,
+            tier=tier_list,
+            category=category_list,
+        )
 
         for tool_name, paths in results.items():
             tool = AI_TOOLS[tool_name]
@@ -658,13 +1205,13 @@ def config_cmd(
         ),
     ] = None,
     backend: Annotated[
-        str,
+        str | None,
         typer.Option(
             "--backend",
             "-b",
-            help="Backend to use (duckdb or bigquery). Default: duckdb",
+            help="Configure settings for backend (duckdb or bigquery). Note: Use 'm4 backend' to switch the active backend.",
         ),
-    ] = "duckdb",
+    ] = None,
     db_path: Annotated[
         str | None,
         typer.Option(
@@ -746,18 +1293,37 @@ def config_cmd(
         error("Could not find m4.mcp_client_configs package")
         raise typer.Exit(code=1)
 
-    # Validate backend-specific arguments
-    # duckdb: db_path allowed, project_id not allowed
-    if backend == "duckdb" and project_id:
-        error("--project-id can only be used with --backend bigquery")
-        raise typer.Exit(code=1)
+    # Track whether backend/project_id were explicitly provided by the user
+    backend_explicit = backend is not None
+    project_id_explicit = project_id is not None
+    if backend is None:
+        backend = get_active_backend()
 
-    # bigquery: requires project_id, db_path not allowed
-    if backend == "bigquery" and db_path:
-        error("--db-path can only be used with --backend duckdb")
-        raise typer.Exit(code=1)
+    # Infer project_id from config when backend is bigquery and not explicitly passed
     if backend == "bigquery" and not project_id:
-        error("--project-id is required when using --backend bigquery")
+        project_id = get_bigquery_project_id()
+
+    # Validate backend-specific arguments only when --backend is explicit
+    if backend_explicit:
+        # duckdb: db_path allowed, project_id not allowed
+        if backend == "duckdb" and project_id:
+            error("--project-id can only be used with --backend bigquery")
+            raise typer.Exit(code=1)
+
+        # bigquery: requires project_id, db_path not allowed
+        if backend == "bigquery" and db_path:
+            error("--db-path can only be used with --backend duckdb")
+            raise typer.Exit(code=1)
+        if backend == "bigquery" and not project_id:
+            error("--project-id is required when using --backend bigquery")
+            raise typer.Exit(code=1)
+
+    # Even when inferred, bigquery still requires a project_id
+    if backend == "bigquery" and not project_id:
+        error(
+            "BigQuery backend requires a project ID. "
+            "Set it with: m4 backend bigquery --project-id <ID>"
+        )
         raise typer.Exit(code=1)
 
     if client == "claude":
@@ -787,6 +1353,11 @@ def config_cmd(
         try:
             result = subprocess.run(cmd, check=True, capture_output=False)
             if result.returncode == 0:
+                # Persist backend and project_id only if explicitly provided
+                if backend_explicit:
+                    set_active_backend(backend)
+                if project_id_explicit:
+                    set_bigquery_project_id(project_id)
                 success("Claude Desktop configuration completed!")
         except subprocess.CalledProcessError as e:
             error(f"Claude Desktop setup failed with exit code {e.returncode}")
@@ -849,8 +1420,14 @@ def config_cmd(
 
         try:
             result = subprocess.run(cmd, check=True, capture_output=False)
-            if result.returncode == 0 and quick:
-                success("Configuration generated successfully!")
+            if result.returncode == 0:
+                # Persist backend and project_id only if explicitly provided
+                if backend_explicit:
+                    set_active_backend(backend)
+                if project_id_explicit:
+                    set_bigquery_project_id(project_id)
+                if quick:
+                    success("Configuration generated successfully!")
         except subprocess.CalledProcessError as e:
             error(f"Configuration generation failed with exit code {e.returncode}")
             raise typer.Exit(code=e.returncode)

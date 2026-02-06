@@ -402,20 +402,40 @@ def init_duckdb_from_parquet(dataset_name: str, db_target_path: Path) -> bool:
     logger.info(
         f"Creating or refreshing views in {db_target_path} for Parquet under {parquet_root}"
     )
-    return _create_duckdb_with_views(db_target_path, parquet_root)
+    mapping = ds.schema_mapping if ds.schema_mapping else None
+    return _create_duckdb_with_views(db_target_path, parquet_root, mapping)
 
 
-def _create_duckdb_with_views(db_path: Path, parquet_root: Path) -> bool:
+def _create_duckdb_with_views(
+    db_path: Path,
+    parquet_root: Path,
+    schema_mapping: dict[str, str] | None = None,
+) -> bool:
     """
-    Create a DuckDB database and define one view per Parquet file,
-    using a generic table naming structure: folder_subfolder_filename.
+    Create a DuckDB database and define one view per Parquet file.
 
-    For example:
-    - hosp/admissions.parquet → view: hosp_admissions
-    - icu/chartevents.parquet → view: icu_chartevents
-    - data.parquet → view: data
+    If schema_mapping is provided, creates real DuckDB schemas and
+    schema-qualified views:
+    - hosp/admissions.parquet with {"hosp": "mimiciv_hosp"}
+      → CREATE SCHEMA mimiciv_hosp; CREATE VIEW mimiciv_hosp.admissions AS ...
+    - patient.parquet with {"": "eicu_crd"}
+      → CREATE SCHEMA eicu_crd; CREATE VIEW eicu_crd.patient AS ...
+
+    If schema_mapping is None (backward compat for custom datasets),
+    uses flat naming: hosp/admissions.parquet → hosp_admissions
     """
-    con = duckdb.connect(str(db_path))
+    try:
+        con = duckdb.connect(str(db_path))
+    except duckdb.IOException as e:
+        if "Could not set lock" in str(e):
+            logger.error(
+                f"Database '{db_path.name}' is locked by another process. "
+                "Close any running M4 servers or other DuckDB connections "
+                "to this database and try again."
+            )
+            return False
+        raise
+
     try:
         # Find all parquet files
         parquet_files = list(parquet_root.rglob("*.parquet"))
@@ -428,6 +448,13 @@ def _create_duckdb_with_views(db_path: Path, parquet_root: Path) -> bool:
         con.execute(f"PRAGMA threads={cpu_count}")
         con.execute("SET memory_limit='8GB'")  # adjust to your machine
 
+        # Create schemas upfront if schema_mapping provided
+        if schema_mapping:
+            for schema_name in set(schema_mapping.values()):
+                if schema_name == "mimiciv_derived":
+                    continue  # Created by m4 init-derived
+                con.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"')
+
         logger.info(f"Creating {len(parquet_files)} views in DuckDB...")
         start_time = time.time()
         created = 0
@@ -438,20 +465,42 @@ def _create_duckdb_with_views(db_path: Path, parquet_root: Path) -> bool:
                 f"Creating {len(parquet_files)} views...", total=len(parquet_files)
             )
 
-            for idx, pq in enumerate(parquet_files, 1):
+            for pq in parquet_files:
                 # Get relative path from parquet_root
                 rel = pq.relative_to(parquet_root)
 
-                # Build view name from directory structure + filename
-                # e.g., hosp/admissions.parquet -> hosp_admissions
-                parts = [*list(rel.parent.parts), rel.stem]  # stem removes .parquet
-
-                # Clean and join parts
-                view_name = "_".join(
-                    p.lower().replace("-", "_").replace(".", "_")
-                    for p in parts
-                    if p != "."
-                )
+                if schema_mapping:
+                    # Resolve directory to schema name
+                    dir_key = str(rel.parent)
+                    if dir_key == ".":
+                        dir_key = ""
+                    schema_name = schema_mapping.get(dir_key)
+                    if schema_name is None:
+                        # Fallback: flat files with a single-schema mapping
+                        # (e.g. mimic-iv-note parquets at root instead of note/)
+                        unique_schemas = set(schema_mapping.values())
+                        if dir_key == "" and len(unique_schemas) == 1:
+                            schema_name = next(iter(unique_schemas))
+                            logger.debug(
+                                f"Flat file '{pq.name}' mapped to sole "
+                                f"schema '{schema_name}'"
+                            )
+                        else:
+                            logger.warning(
+                                f"No schema mapping for directory '{dir_key}', "
+                                f"skipping {pq}"
+                            )
+                            continue
+                    table_name = rel.stem.lower()
+                    view_name = f"{schema_name}.{table_name}"
+                else:
+                    # Flat naming for backward compat
+                    parts = [*list(rel.parent.parts), rel.stem]
+                    view_name = "_".join(
+                        p.lower().replace("-", "_").replace(".", "_")
+                        for p in parts
+                        if p != "."
+                    )
 
                 # Create view pointing to the specific parquet file
                 sql = f"""
@@ -476,10 +525,14 @@ def _create_duckdb_with_views(db_path: Path, parquet_root: Path) -> bool:
 
         # List all created views for verification
         views_result = con.execute(
-            "SELECT table_name FROM information_schema.tables WHERE table_type='VIEW' ORDER BY table_name"
+            "SELECT table_schema || '.' || table_name "
+            "FROM information_schema.tables "
+            "WHERE table_type='VIEW' "
+            "ORDER BY table_schema, table_name"
         ).fetchall()
         logger.info(
-            f"Created views: {', '.join(v[0] for v in views_result[:10])}{'...' if len(views_result) > 10 else ''}"
+            f"Created views: {', '.join(v[0] for v in views_result[:10])}"
+            f"{'...' if len(views_result) > 10 else ''}"
         )
 
         return True
@@ -517,7 +570,9 @@ def ensure_duckdb_for_dataset(
             f"Parquet directory missing: {parquet_root}. Expected at <project_root>/m4_data/parquet/{dataset_key}/"
         )
         return False, db_path, parquet_root
-    ok = _create_duckdb_with_views(db_path, parquet_root)
+    ds = DatasetRegistry.get(dataset_key)
+    mapping = ds.schema_mapping if ds and ds.schema_mapping else None
+    ok = _create_duckdb_with_views(db_path, parquet_root, mapping)
     return ok, db_path, parquet_root
 
 

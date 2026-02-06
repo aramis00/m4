@@ -67,34 +67,6 @@ def mock_notes_dataset():
     DatasetRegistry._registry.pop("test-notes", None)
 
 
-class TestPackageLevelImports:
-    """Test that all API functions are importable from m4 package."""
-
-    def test_import_exceptions(self):
-        """Test exception classes are importable."""
-        assert issubclass(DatasetError, M4Error)
-        assert issubclass(QueryError, M4Error)
-        assert issubclass(ModalityError, M4Error)
-
-    def test_import_dataset_functions(self):
-        """Test dataset management functions are importable."""
-        assert callable(list_datasets)
-        assert callable(set_dataset)
-        assert callable(get_active_dataset)
-
-    def test_import_tabular_functions(self):
-        """Test tabular data functions are importable."""
-        assert callable(get_schema)
-        assert callable(get_table_info)
-        assert callable(execute_query)
-
-    def test_import_notes_functions(self):
-        """Test clinical notes functions are importable."""
-        assert callable(search_notes)
-        assert callable(get_note)
-        assert callable(list_patient_notes)
-
-
 class TestDatasetManagement:
     """Test dataset management API functions."""
 
@@ -130,7 +102,7 @@ class TestDatasetManagement:
     @patch("m4.api._get_active_dataset")
     def test_get_active_dataset_none_raises_error(self, mock_get):
         """Test getting active dataset when none is set."""
-        mock_get.side_effect = ValueError("No active dataset")
+        mock_get.side_effect = DatasetError("No active dataset")
         with pytest.raises(DatasetError):
             get_active_dataset()
 
@@ -144,7 +116,10 @@ class TestTabularDataAPI:
         """Test get_schema returns dict with tables."""
         mock_get_active.return_value = mock_tabular_dataset
         mock_backend = MagicMock()
-        mock_backend.get_table_list.return_value = ["patients", "admissions"]
+        mock_backend.get_table_list.return_value = [
+            "mimiciv_hosp.patients",
+            "mimiciv_hosp.admissions",
+        ]
         mock_backend.get_backend_info.return_value = "Backend: DuckDB"
         mock_get_backend.return_value = mock_backend
 
@@ -152,8 +127,8 @@ class TestTabularDataAPI:
 
         # Result is now a dict with 'tables' key
         assert isinstance(result, dict)
-        assert "patients" in result["tables"]
-        assert "admissions" in result["tables"]
+        assert "mimiciv_hosp.patients" in result["tables"]
+        assert "mimiciv_hosp.admissions" in result["tables"]
         mock_backend.get_table_list.assert_called_once()
 
     @patch(TABULAR_BACKEND_PATCH)

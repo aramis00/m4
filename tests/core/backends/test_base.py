@@ -15,6 +15,7 @@ from m4.core.backends.base import (
     QueryExecutionError,
     QueryResult,
     TableNotFoundError,
+    sanitize_error_message,
 )
 
 
@@ -138,3 +139,172 @@ class TestBackendProtocol:
 
         backend = IncompleteBackend()
         assert not isinstance(backend, Backend)
+
+
+class TestSanitizeErrorMessage:
+    """Tests for sanitize_error_message function."""
+
+    # --- DuckDB-style errors (existing patterns) ---
+
+    def test_table_not_found(self):
+        """DuckDB-style 'no such table' error."""
+        err = Exception("Catalog Error: Table 'foo' not found")
+        msg = sanitize_error_message(err, "duckdb")
+        assert "Table not found" in msg
+
+    def test_no_such_table(self):
+        """DuckDB-style 'no such table' error."""
+        err = Exception("no such table: patients")
+        msg = sanitize_error_message(err, "duckdb")
+        assert "Table not found" in msg
+
+    def test_column_not_found(self):
+        """Column not found error."""
+        err = Exception("no such column: foobar")
+        msg = sanitize_error_message(err, "duckdb")
+        assert "Column not found" in msg
+
+    def test_syntax_error(self):
+        """SQL syntax error."""
+        err = Exception("Parser Error: syntax error at or near 'FORM'")
+        msg = sanitize_error_message(err, "duckdb")
+        assert "syntax error" in msg.lower()
+
+    def test_timeout(self):
+        """Query timeout."""
+        err = Exception("Query timed out after 300s")
+        msg = sanitize_error_message(err, "duckdb")
+        assert "timed out" in msg.lower()
+
+    def test_connection_error(self):
+        """Connection error."""
+        err = Exception("connection refused")
+        msg = sanitize_error_message(err, "duckdb")
+        assert "Connection error" in msg
+
+    # --- BigQuery-specific errors (new patterns) ---
+
+    def test_bigquery_404_dataset_not_found(self):
+        """BigQuery 404 when dataset doesn't exist."""
+        err = Exception("404 Not Found: Dataset my-project:my_dataset was not found")
+        msg = sanitize_error_message(err, "bigquery")
+        assert "Resource not found" in msg
+
+    def test_bigquery_404_project_not_found(self):
+        """BigQuery 404 when project doesn't exist."""
+        err = Exception("404 Not found: Project bad-project was not found")
+        msg = sanitize_error_message(err, "bigquery")
+        assert "Resource not found" in msg
+
+    def test_bigquery_billing_error(self):
+        """BigQuery billing not enabled."""
+        err = Exception(
+            "Access Denied: BigQuery BigQuery: Billing is not enabled for this project"
+        )
+        msg = sanitize_error_message(err, "bigquery")
+        assert "Billing error" in msg
+
+    def test_bigquery_403_forbidden(self):
+        """BigQuery 403 Forbidden."""
+        err = Exception("403 Forbidden: Access denied for user@example.com")
+        msg = sanitize_error_message(err, "bigquery")
+        assert "Permission denied" in msg
+
+    def test_bigquery_permission_denied(self):
+        """BigQuery access denied."""
+        err = Exception("Access Denied: permission denied for dataset")
+        msg = sanitize_error_message(err, "bigquery")
+        assert "Permission denied" in msg
+
+    def test_bigquery_quota_exceeded(self):
+        """BigQuery quota exceeded."""
+        err = Exception("Quota exceeded: Too many concurrent queries")
+        msg = sanitize_error_message(err, "bigquery")
+        assert "Quota exceeded" in msg
+
+    def test_bigquery_rate_limit(self):
+        """BigQuery rate limit."""
+        err = Exception("Rate limit exceeded for API calls")
+        msg = sanitize_error_message(err, "bigquery")
+        assert "rate limited" in msg.lower() or "Quota exceeded" in msg
+
+    # --- Generic fallback ---
+
+    def test_generic_fallback_includes_error_type(self):
+        """Generic fallback includes the exception type name."""
+        err = ValueError("some unexpected internal error")
+        msg = sanitize_error_message(err, "bigquery")
+        assert "Query execution failed" in msg
+        assert "ValueError" in msg
+
+    def test_generic_fallback_for_unknown_exception(self):
+        """Generic fallback for completely unknown errors."""
+
+        class CustomBQError(Exception):
+            pass
+
+        err = CustomBQError("something went wrong")
+        msg = sanitize_error_message(err, "bigquery")
+        assert "Query execution failed" in msg
+        assert "CustomBQError" in msg
+
+    # --- Additional edge cases and variant patterns ---
+
+    def test_column_not_found_unknown_column(self):
+        """MySQL-style 'Unknown column' error."""
+        err = Exception("Unknown column 'xyz' in field list")
+        msg = sanitize_error_message(err, "duckdb")
+        assert "Column not found" in msg
+
+    def test_parse_error(self):
+        """Parse error variant of syntax error."""
+        err = Exception("Parse error: unexpected token")
+        msg = sanitize_error_message(err, "duckdb")
+        assert "SQL syntax error" in msg
+
+    def test_bigquery_access_denied(self):
+        """BigQuery 'Access Denied' triggers permission denied."""
+        err = Exception("Access Denied: Access is denied")
+        msg = sanitize_error_message(err, "bigquery")
+        assert "Permission denied" in msg
+
+    def test_bigquery_unauthorized(self):
+        """BigQuery 401 Unauthorized triggers permission denied."""
+        err = Exception(
+            "401 Unauthorized: Request had invalid authentication credentials"
+        )
+        msg = sanitize_error_message(err, "bigquery")
+        assert "Permission denied" in msg
+
+    def test_timed_out_variant(self):
+        """'timed out' variant triggers timeout message."""
+        err = Exception("Operation timed out")
+        msg = sanitize_error_message(err, "duckdb")
+        assert "timed out" in msg
+
+    def test_network_error(self):
+        """Network unreachable triggers connection error."""
+        err = Exception("Network is unreachable")
+        msg = sanitize_error_message(err, "duckdb")
+        assert "Connection error" in msg
+
+    def test_generic_error_truncates_long_message(self):
+        """Generic fallback truncates messages longer than 200 characters."""
+        err = Exception("x" * 300)
+        msg = sanitize_error_message(err, "duckdb")
+        assert len(msg) < 300
+        assert msg.endswith("...")
+
+    def test_billing_before_permission(self):
+        """Billing check has priority over permission denied check."""
+        err = Exception("Access Denied: Billing not enabled for project")
+        msg = sanitize_error_message(err, "bigquery")
+        assert "Billing error" in msg
+
+    def test_backend_name_logged(self, caplog):
+        """Backend name is included in debug log message."""
+        import logging
+
+        with caplog.at_level(logging.DEBUG, logger="m4"):
+            sanitize_error_message(Exception("test error"), "bigquery")
+        assert "[bigquery]" in caplog.text

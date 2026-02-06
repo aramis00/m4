@@ -1,8 +1,10 @@
 """Tests for SQL validation and parameter sanitization."""
 
+from m4.core.datasets import DatasetRegistry
 from m4.core.validation import (
     format_error_with_guidance,
     is_safe_query,
+    validate_table_name,
 )
 
 
@@ -346,3 +348,161 @@ class TestFormatErrorWithGuidance:
         """Generic errors should still provide guidance."""
         result = format_error_with_guidance("Unknown error occurred")
         assert "get_database_schema()" in result
+
+
+class TestValidateTableName:
+    """Tests for validate_table_name function."""
+
+    def test_simple_table_name(self):
+        """Plain table names are valid."""
+        assert validate_table_name("patients") is True
+        assert validate_table_name("hosp_admissions") is True
+
+    def test_qualified_name_two_parts(self):
+        """schema.table format is valid."""
+        assert validate_table_name("mimiciv_hosp.patients") is True
+        assert validate_table_name("eicu_crd.patient") is True
+        assert validate_table_name("mimiciv_hosp.admissions") is True
+
+    def test_three_parts_invalid(self):
+        """Three-part names (a.b.c) are invalid."""
+        assert validate_table_name("a.b.c") is False
+
+    def test_empty_schema_invalid(self):
+        """Leading dot (.table) is invalid."""
+        assert validate_table_name(".table") is False
+
+    def test_empty_table_invalid(self):
+        """Trailing dot (schema.) is invalid."""
+        assert validate_table_name("schema.") is False
+
+    def test_backtick_wrapped_passthrough(self):
+        """Backtick-wrapped BigQuery names pass through."""
+        assert validate_table_name("`project.dataset.table`") is True
+        assert validate_table_name("`physionet-data.mimiciv_hosp.admissions`") is True
+
+    def test_empty_and_none(self):
+        """Empty string and None are invalid."""
+        assert validate_table_name("") is False
+        assert validate_table_name(None) is False
+
+    def test_sql_keyword_as_table_rejected(self):
+        """SQL keywords are rejected as the table part."""
+        assert validate_table_name("SELECT") is False
+        assert validate_table_name("DROP") is False
+
+    def test_sql_keyword_as_schema_allowed(self):
+        """SQL keywords in the schema part are not rejected (unlikely but spec says only check table part)."""
+        # The schema part is not checked against SQL keywords
+        assert validate_table_name("select.patients") is True
+
+    def test_special_characters_rejected(self):
+        """Names with special characters are rejected."""
+        assert validate_table_name("table name") is False
+        assert validate_table_name("table;name") is False
+        assert validate_table_name("table--name") is False
+
+    def test_all_builtin_canonical_names_accepted(self):
+        """All primary_verification_table values from built-in datasets pass validation."""
+        DatasetRegistry.reset()
+        for ds in DatasetRegistry.list_all():
+            table = ds.primary_verification_table
+            if table:
+                assert validate_table_name(table) is True, (
+                    f"{ds.name}: primary_verification_table '{table}' failed validation"
+                )
+
+    def test_numeric_start_rejected(self):
+        """Table names starting with a digit are rejected."""
+        assert validate_table_name("123table") is False
+        assert validate_table_name("1") is False
+
+    def test_underscore_start_allowed(self):
+        """Table names starting with underscore are valid identifiers."""
+        assert validate_table_name("_internal") is True
+        assert validate_table_name("schema._table") is True
+
+    def test_all_sql_keywords_blocked_as_table(self):
+        """All SQL keywords in the blocklist are rejected as table names."""
+        keywords = [
+            "SELECT",
+            "FROM",
+            "WHERE",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "DROP",
+            "CREATE",
+            "ALTER",
+            "TRUNCATE",
+        ]
+        for kw in keywords:
+            assert validate_table_name(kw) is False, (
+                f"SQL keyword '{kw}' should be rejected as table name"
+            )
+            assert validate_table_name(kw.lower()) is False, (
+                f"Lowercase SQL keyword '{kw.lower()}' should be rejected"
+            )
+
+    def test_sql_keyword_in_schema_qualified(self):
+        """SQL keywords in schema.keyword form are rejected (keyword is the table part)."""
+        assert validate_table_name("myschema.SELECT") is False
+        assert validate_table_name("myschema.DROP") is False
+
+
+class TestIsSafeQueryRobustness:
+    """Test is_safe_query robustness against edge cases that could
+    cause false positives or false negatives in a clinical context."""
+
+    def test_cte_queries_allowed(self):
+        """Common Table Expressions (WITH ... AS) are safe."""
+        is_safe, msg = is_safe_query(
+            "WITH cohort AS (SELECT subject_id FROM patients) "
+            "SELECT * FROM cohort LIMIT 10"
+        )
+        assert is_safe is True
+
+    def test_window_functions_allowed(self):
+        """Window functions are legitimate clinical analysis SQL."""
+        is_safe, msg = is_safe_query(
+            "SELECT subject_id, ROW_NUMBER() OVER (PARTITION BY subject_id ORDER BY charttime) "
+            "FROM labevents LIMIT 10"
+        )
+        assert is_safe is True
+
+    def test_subquery_in_select_allowed(self):
+        """Subqueries in SELECT list are legitimate."""
+        is_safe, msg = is_safe_query(
+            "SELECT subject_id, "
+            "(SELECT COUNT(*) FROM admissions a WHERE a.subject_id = p.subject_id) "
+            "FROM patients p LIMIT 10"
+        )
+        assert is_safe is True
+
+    def test_exec_keyword_blocked(self):
+        """EXEC / EXECUTE are blocked even embedded in SELECT."""
+        is_safe, _ = is_safe_query("SELECT * FROM t WHERE EXEC xp_cmdshell('dir')")
+        assert is_safe is False
+
+    def test_merge_keyword_blocked(self):
+        """MERGE is a write operation and should be blocked."""
+        is_safe, _ = is_safe_query(
+            "MERGE INTO patients USING new_data ON patients.id = new_data.id"
+        )
+        assert is_safe is False
+
+    def test_truncate_keyword_blocked(self):
+        """TRUNCATE is a write operation and should be blocked."""
+        is_safe, _ = is_safe_query("TRUNCATE TABLE patients")
+        assert is_safe is False
+
+    def test_replace_keyword_blocked(self):
+        """REPLACE is a write operation and should be blocked."""
+        is_safe, _ = is_safe_query("REPLACE INTO patients VALUES (1, 'test')")
+        assert is_safe is False
+
+    def test_none_input_returns_false(self):
+        """None input should not crash the validator."""
+        # is_safe_query expects str; passing None should return False gracefully
+        is_safe, _ = is_safe_query(None)
+        assert is_safe is False

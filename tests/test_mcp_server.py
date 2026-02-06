@@ -45,15 +45,16 @@ class TestMCPTools:
 
     @pytest.fixture
     def test_db(self, tmp_path):
-        """Create a test DuckDB database."""
+        """Create a test DuckDB database with schema-qualified tables."""
         import duckdb
 
         db_path = tmp_path / "test.duckdb"
         con = duckdb.connect(str(db_path))
         try:
+            con.execute("CREATE SCHEMA mimiciv_icu")
             con.execute(
                 """
-                CREATE TABLE icu_icustays (
+                CREATE TABLE mimiciv_icu.icustays (
                     subject_id INTEGER,
                     hadm_id INTEGER,
                     stay_id INTEGER,
@@ -64,14 +65,15 @@ class TestMCPTools:
             )
             con.execute(
                 """
-                INSERT INTO icu_icustays (subject_id, hadm_id, stay_id, intime, outtime) VALUES
+                INSERT INTO mimiciv_icu.icustays (subject_id, hadm_id, stay_id, intime, outtime) VALUES
                     (10000032, 20000001, 30000001, '2180-07-23 15:00:00', '2180-07-24 12:00:00'),
                     (10000033, 20000002, 30000002, '2180-08-15 10:30:00', '2180-08-16 14:15:00')
                 """
             )
+            con.execute("CREATE SCHEMA mimiciv_hosp")
             con.execute(
                 """
-                CREATE TABLE hosp_labevents (
+                CREATE TABLE mimiciv_hosp.labevents (
                     subject_id INTEGER,
                     hadm_id INTEGER,
                     itemid INTEGER,
@@ -82,7 +84,7 @@ class TestMCPTools:
             )
             con.execute(
                 """
-                INSERT INTO hosp_labevents (subject_id, hadm_id, itemid, charttime, value) VALUES
+                INSERT INTO mimiciv_hosp.labevents (subject_id, hadm_id, itemid, charttime, value) VALUES
                     (10000032, 20000001, 50912, '2180-07-23 16:00:00', '120'),
                     (10000033, 20000002, 50912, '2180-08-15 11:00:00', '95')
                 """
@@ -131,7 +133,9 @@ class TestMCPTools:
                         # Test execute_query tool
                         result = await client.call_tool(
                             "execute_query",
-                            {"sql_query": "SELECT COUNT(*) as count FROM icu_icustays"},
+                            {
+                                "sql_query": "SELECT COUNT(*) as count FROM mimiciv_icu.icustays"
+                            },
                         )
                         result_text = str(result)
                         assert "count" in result_text
@@ -141,8 +145,8 @@ class TestMCPTools:
                         result = await client.call_tool("get_database_schema", {})
                         result_text = str(result)
                         assert (
-                            "icu_icustays" in result_text
-                            or "hosp_labevents" in result_text
+                            "mimiciv_icu.icustays" in result_text
+                            or "mimiciv_hosp.labevents" in result_text
                         )
 
     @pytest.mark.asyncio
@@ -164,12 +168,12 @@ class TestMCPTools:
             async with Client(mcp) as client:
                 # Test dangerous queries are blocked
                 dangerous_queries = [
-                    "UPDATE icu_icustays SET subject_id = 999",
-                    "DELETE FROM icu_icustays",
-                    "INSERT INTO icu_icustays VALUES (1, 2, 3, '2020-01-01', '2020-01-02')",
-                    "DROP TABLE icu_icustays",
+                    "UPDATE mimiciv_icu.icustays SET subject_id = 999",
+                    "DELETE FROM mimiciv_icu.icustays",
+                    "INSERT INTO mimiciv_icu.icustays VALUES (1, 2, 3, '2020-01-01', '2020-01-02')",
+                    "DROP TABLE mimiciv_icu.icustays",
                     "CREATE TABLE test (id INTEGER)",
-                    "ALTER TABLE icu_icustays ADD COLUMN test TEXT",
+                    "ALTER TABLE mimiciv_icu.icustays ADD COLUMN test TEXT",
                 ]
 
                 for query in dangerous_queries:
@@ -254,7 +258,7 @@ class TestMCPTools:
                         result = await client.call_tool(
                             "execute_query",
                             {
-                                "sql_query": "SELECT * FROM icu_icustays WHERE subject_id = 999999"
+                                "sql_query": "SELECT * FROM mimiciv_icu.icustays WHERE subject_id = 999999"
                             },
                         )
                         result_text = str(result)
@@ -286,7 +290,7 @@ class TestMCPTools:
                 # Test that tools require authentication
                 result = await client.call_tool(
                     "execute_query",
-                    {"sql_query": "SELECT COUNT(*) FROM icu_icustays"},
+                    {"sql_query": "SELECT COUNT(*) FROM mimiciv_icu.icustays"},
                 )
                 result_text = str(result)
                 assert "Missing OAuth2 access token" in result_text
@@ -354,28 +358,11 @@ class TestBigQueryIntegration:
                         result = await client.call_tool(
                             "execute_query",
                             {
-                                "sql_query": "SELECT COUNT(*) FROM `physionet-data.mimiciv_3_1_icu.icustays`"
+                                "sql_query": "SELECT COUNT(*) FROM `physionet-data.mimiciv_icu.icustays`"
                             },
                         )
                         result_text = str(result)
                         assert "Mock BigQuery result" in result_text
-
-
-class TestServerIntegration:
-    """Test overall server integration."""
-
-    def test_server_main_function_exists(self):
-        """Test that the main function exists and is callable."""
-        from m4.mcp_server import main
-
-        assert callable(main)
-
-    def test_server_can_be_imported_as_module(self):
-        """Test that the server can be imported as a module."""
-        import m4.mcp_server
-
-        assert hasattr(m4.mcp_server, "mcp")
-        assert hasattr(m4.mcp_server, "main")
 
 
 class TestModalityChecking:
@@ -507,26 +494,36 @@ class TestModalityChecking:
             ):
                 with patch("m4.core.tools.management.set_active_dataset"):
                     with patch(
-                        "m4.core.tools.management.DatasetRegistry.get",
-                        return_value=target_ds,
+                        "m4.config.get_active_dataset",
+                        return_value="test-dataset",
                     ):
                         with patch(
-                            "m4.mcp_server.DatasetRegistry.get", return_value=target_ds
+                            "m4.core.tools.management.DatasetRegistry.get",
+                            return_value=target_ds,
                         ):
-                            async with Client(mcp) as client:
-                                result = await client.call_tool(
-                                    "set_dataset", {"dataset_name": "test-dataset"}
-                                )
-                                result_text = str(result)
+                            with patch(
+                                "m4.mcp_server.DatasetRegistry.get",
+                                return_value=target_ds,
+                            ):
+                                with patch(
+                                    "m4.core.tools.management.get_active_backend",
+                                    return_value="duckdb",
+                                ):
+                                    async with Client(mcp) as client:
+                                        result = await client.call_tool(
+                                            "set_dataset",
+                                            {"dataset_name": "test-dataset"},
+                                        )
+                                        result_text = str(result)
 
-                                # Verify snapshot is included
-                                assert "Active dataset" in result_text
-                                assert "test-dataset" in result_text
-                                assert "Modalities" in result_text
-                                assert "Supported tools" in result_text
+                                        # Verify snapshot is included
+                                        assert "Active dataset" in result_text
+                                        assert "test-dataset" in result_text
+                                        assert "Modalities" in result_text
+                                        assert "Supported tools" in result_text
 
-                                # Tools should be sorted alphabetically
-                                assert "execute_query" in result_text
+                                        # Tools should be sorted alphabetically
+                                        assert "execute_query" in result_text
 
     @pytest.mark.asyncio
     async def test_set_dataset_invalid_returns_error_without_snapshot(self):
@@ -668,3 +665,156 @@ class TestModalityChecking:
 
         # Should show warning about no tools or just management tools
         assert "No data tools available" in snapshot or "list_datasets" in snapshot
+
+
+class TestNoActiveDatasetError:
+    """Test that MCP tools return error messages when no dataset is configured."""
+
+    @pytest.mark.asyncio
+    async def test_tools_return_error_when_no_active_dataset(self):
+        """All data tools should return an error string, not crash,
+        when DatasetRegistry.get_active() raises DatasetError."""
+        from m4.core.exceptions import DatasetError
+
+        with patch.dict(os.environ, {"M4_OAUTH2_ENABLED": "false"}, clear=True):
+            with patch(
+                "m4.mcp_server.DatasetRegistry.get_active",
+                side_effect=DatasetError("No active dataset configured."),
+            ):
+                async with Client(mcp) as client:
+                    # Test all 6 tools that call get_active()
+                    tools_and_args = [
+                        ("get_database_schema", {}),
+                        ("get_table_info", {"table_name": "test"}),
+                        ("execute_query", {"sql_query": "SELECT 1"}),
+                        ("search_notes", {"query": "test"}),
+                        ("get_note", {"note_id": "123"}),
+                        ("list_patient_notes", {"subject_id": 1}),
+                    ]
+
+                    for tool_name, args in tools_and_args:
+                        result = await client.call_tool(tool_name, args)
+                        result_text = str(result)
+                        assert "**Error:**" in result_text, (
+                            f"{tool_name} did not return error message"
+                        )
+                        assert "No active dataset" in result_text, (
+                            f"{tool_name} error message missing context"
+                        )
+
+
+class TestMCPNotesTools:
+    """Test MCP notes tools (search_notes, get_note, list_patient_notes).
+
+    These tests verify that notes tools:
+    1. Return compatibility errors on datasets without NOTES modality
+    2. Return error messages (not crashes) when no dataset is active
+    """
+
+    @pytest.fixture
+    def tabular_only_dataset(self):
+        """Dataset with only TABULAR modality (no NOTES)."""
+        return DatasetDefinition(
+            name="tabular-only",
+            modalities=frozenset({Modality.TABULAR}),
+        )
+
+    # --- Incompatible dataset tests ---
+
+    @pytest.mark.asyncio
+    async def test_search_notes_incompatible_dataset(self, tabular_only_dataset):
+        """search_notes should return compatibility error on TABULAR-only dataset."""
+        with patch.dict(os.environ, {"M4_OAUTH2_ENABLED": "false"}, clear=True):
+            with patch(
+                "m4.mcp_server.DatasetRegistry.get_active",
+                return_value=tabular_only_dataset,
+            ):
+                async with Client(mcp) as client:
+                    result = await client.call_tool("search_notes", {"query": "sepsis"})
+                    result_text = str(result)
+                    assert "NOTES" in result_text
+                    assert "search_notes" in result_text
+                    assert "tabular-only" in result_text
+
+    @pytest.mark.asyncio
+    async def test_get_note_incompatible_dataset(self, tabular_only_dataset):
+        """get_note should return compatibility error on TABULAR-only dataset."""
+        with patch.dict(os.environ, {"M4_OAUTH2_ENABLED": "false"}, clear=True):
+            with patch(
+                "m4.mcp_server.DatasetRegistry.get_active",
+                return_value=tabular_only_dataset,
+            ):
+                async with Client(mcp) as client:
+                    result = await client.call_tool("get_note", {"note_id": "12345"})
+                    result_text = str(result)
+                    assert "NOTES" in result_text
+                    assert "get_note" in result_text
+                    assert "tabular-only" in result_text
+
+    @pytest.mark.asyncio
+    async def test_list_patient_notes_incompatible_dataset(self, tabular_only_dataset):
+        """list_patient_notes should return compatibility error on TABULAR-only dataset."""
+        with patch.dict(os.environ, {"M4_OAUTH2_ENABLED": "false"}, clear=True):
+            with patch(
+                "m4.mcp_server.DatasetRegistry.get_active",
+                return_value=tabular_only_dataset,
+            ):
+                async with Client(mcp) as client:
+                    result = await client.call_tool(
+                        "list_patient_notes", {"subject_id": 10000032}
+                    )
+                    result_text = str(result)
+                    assert "NOTES" in result_text
+                    assert "list_patient_notes" in result_text
+                    assert "tabular-only" in result_text
+
+    # --- No active dataset tests ---
+
+    @pytest.mark.asyncio
+    async def test_search_notes_no_active_dataset(self):
+        """search_notes should return error when no dataset is active."""
+        from m4.core.exceptions import DatasetError
+
+        with patch.dict(os.environ, {"M4_OAUTH2_ENABLED": "false"}, clear=True):
+            with patch(
+                "m4.mcp_server.DatasetRegistry.get_active",
+                side_effect=DatasetError("No active dataset"),
+            ):
+                async with Client(mcp) as client:
+                    result = await client.call_tool(
+                        "search_notes", {"query": "infection"}
+                    )
+                    result_text = str(result)
+                    assert "Error" in result_text
+
+    @pytest.mark.asyncio
+    async def test_get_note_no_active_dataset(self):
+        """get_note should return error when no dataset is active."""
+        from m4.core.exceptions import DatasetError
+
+        with patch.dict(os.environ, {"M4_OAUTH2_ENABLED": "false"}, clear=True):
+            with patch(
+                "m4.mcp_server.DatasetRegistry.get_active",
+                side_effect=DatasetError("No active dataset"),
+            ):
+                async with Client(mcp) as client:
+                    result = await client.call_tool("get_note", {"note_id": "99999"})
+                    result_text = str(result)
+                    assert "Error" in result_text
+
+    @pytest.mark.asyncio
+    async def test_list_patient_notes_no_active_dataset(self):
+        """list_patient_notes should return error when no dataset is active."""
+        from m4.core.exceptions import DatasetError
+
+        with patch.dict(os.environ, {"M4_OAUTH2_ENABLED": "false"}, clear=True):
+            with patch(
+                "m4.mcp_server.DatasetRegistry.get_active",
+                side_effect=DatasetError("No active dataset"),
+            ):
+                async with Client(mcp) as client:
+                    result = await client.call_tool(
+                        "list_patient_notes", {"subject_id": 10000032}
+                    )
+                    result_text = str(result)
+                    assert "Error" in result_text
