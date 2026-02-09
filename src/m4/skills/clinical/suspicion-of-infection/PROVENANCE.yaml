@@ -1,0 +1,29 @@
+sources:
+  - name: MIT-LCP mimic-code
+    url: https://github.com/MIT-LCP/mimic-code
+    license: Apache-2.0
+    files:
+      - mimic-iv/concepts/sepsis/suspicion_of_infection.sql
+
+created:
+  by: m4-clinical-extraction
+  role: clinical-extraction
+  date: 2025-01-13
+
+reviews:
+  - by: Ahram Han, MD
+    date: 2026-02-09
+    scope: clinical-accuracy
+    notes: Restructured to dataset-agnostic format. Added general limitations (proxy nature, time window operationalization), eICU availability assessment, separated MIMIC-specific implementation details.
+
+references:
+  - "Singer M et al. Sepsis-3. JAMA. 2016;315(8):801-810."
+  - "Seymour CW et al. Assessment of Clinical Criteria for Sepsis. JAMA. 2016;315(8):762-774."
+
+changelog:
+  - version: "1.0"
+    date: 2025-01-13
+    summary: Initial extraction from mimic-code
+  - version: "1.1"
+    date: 2026-02-09
+    summary: Restructured to dataset-agnostic format, added general limitations, eICU section, mimic-code source reference
