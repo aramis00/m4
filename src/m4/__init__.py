@@ -8,14 +8,16 @@ Quick Start:
 
     set_dataset("mimic-iv")
     print(get_schema())
-    result = execute_query("SELECT COUNT(*) FROM hosp_patients")
+    result = execute_query("SELECT COUNT(*) FROM mimiciv_hosp.patients")
 
 For MCP server usage, run: m4 serve
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.3"
 
 # Expose API functions at package level for easy imports
+from vitrine import show
+
 from m4.api import (
     # Exceptions
     DatasetError,
@@ -51,4 +53,5 @@ __all__ = [
     "list_patient_notes",
     "search_notes",
     "set_dataset",
+    "show",
 ]

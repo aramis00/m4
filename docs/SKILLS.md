@@ -1,6 +1,8 @@
 # Agent Skills
 
-Skills are contextual prompts that teach AI coding assistants how to accomplish specific tasks. M4 ships with 17 skills: one for the Python API, and 16 clinical research skills extracted from MIT-LCP validated code repositories.
+Skills are contextual prompts that teach AI coding assistants how to accomplish specific tasks.
+
+For the canonical list of bundled skills, see `src/m4/skills/SKILLS_INDEX.md`.
 
 ## What Skills Do
 
@@ -23,15 +25,28 @@ m4 config claude --skills
 Or install to an existing project:
 
 ```bash
-# Interactive tool selection
+# Interactive tool and skill selection
 m4 skills
 
-# Install for specific tools
+# Install all skills for specific tools
 m4 skills --tools claude,cursor
 
-# List installed skills
+# Install only validated clinical skills
+m4 skills --tools claude --tier validated --category clinical
+
+# Install specific skills by name
+m4 skills --tools claude --skills sofa-score,sepsis-3-cohort,m4-api
+
+# Install only system skills
+m4 skills --tools claude --category system
+
+# List installed skills (with tier and category)
 m4 skills --list
 ```
+
+When `--tools` is omitted, an interactive prompt lets you select tools. When no filter flags (`--skills`, `--tier`, `--category`) are provided in interactive mode, you are also prompted to choose between installing all skills or filtering by category, tier, or individual selection.
+
+Filters combine with AND logic: `--tier validated --category clinical` installs only skills that are both validated and clinical. Filtered installs are additive — existing skills that don't match the filter are left untouched.
 
 Skills are installed to `.claude/skills/` (or equivalent for other tools). AI assistants automatically discover skills in these locations.
 
@@ -43,6 +58,8 @@ Skills are installed to `.claude/skills/` (or equivalent for other tools). AI as
 | Skill | Triggers On | Description |
 |-------|-------------|-------------|
 | **m4-api** | "M4 API", "query MIMIC with Python", "clinical data analysis" | Complete Python API usage including `set_dataset()`, DataFrame handling, error handling |
+| **m4-research** | "research workflow", "clinical study", "protocol" | Structured clinical research workflow and protocol drafting |
+| **create-m4-skill** | "create skill", "new skill", "skill template" | Guide for creating new M4 skills |
 
 ### Severity Scores
 
@@ -96,6 +113,19 @@ Skills are installed to `.claude/skills/` (or equivalent for other tools). AI as
 | **clinical-research-pitfalls** | "immortal time bias", "information leakage", "selection bias" | Common methodological mistakes and how to avoid them |
 
 
+## Skills vs. Derived Tables
+
+Skills and derived tables are complementary features that share the same clinical knowledge source (mimic-code), but serve different purposes:
+
+**Derived tables** (`mimiciv_derived.*`) provide pre-computed results. After running `m4 init-derived mimic-iv`, tables like `mimiciv_derived.sofa` and `mimiciv_derived.sepsis3` are ready to query directly. For standard analyses -- computing mortality by SOFA score, identifying sepsis cohorts, filtering by AKI stage -- derived tables are the preferred approach. They are faster (no complex SQL at query time), validated (production-tested SQL from mimic-code), and consistent (every user gets the same results).
+
+**Skills** provide adaptable SQL patterns that the AI assistant can modify for non-standard use cases. When a researcher needs a custom SOFA variant, wants to apply different time windows, or needs to combine concepts in novel ways, skills give the AI the clinical knowledge to generate correct queries from scratch.
+
+**When to use which:**
+- Use derived tables for standard clinical concepts (scores, cohorts, staging) -- they are pre-computed and immediately available
+- Use skills when you need customized logic, non-standard criteria, or when working with datasets that do not have derived tables (e.g., eICU)
+- Skills and derived tables can be used together -- for example, joining a custom cohort with `mimiciv_derived.sofa` for severity scores
+
 ## Skill Structure
 
 Each skill is a directory containing a `SKILL.md` file:
@@ -121,12 +151,16 @@ The `SKILL.md` contains:
 ---
 name: sofa-score
 description: Calculate SOFA score for ICU patients...
+tier: validated
+category: clinical
 ---
 
 # SOFA Score Calculation
 
 [Detailed instructions, SQL examples, clinical context...]
 ```
+
+The frontmatter has four required fields: `name`, `description`, `tier` (one of `validated`, `expert`, `community`), and `category` (`clinical` or `system`). See `src/m4/skills/SKILL_FORMAT.md` for full details.
 
 Clinical skills include validated SQL scripts in their `scripts/` subdirectory.
 
@@ -139,6 +173,8 @@ You can extend M4 with project-specific skills. Create a skill for your research
 ---
 name: cardiac-surgery-cohort
 description: Identify cardiac surgery patients. Triggers on "CABG", "valve replacement", "cardiac surgery"
+tier: community
+category: clinical
 ---
 
 # Cardiac Surgery Cohort Selection
@@ -186,6 +222,18 @@ Check which M4 skills are installed:
 
 ```bash
 m4 skills --list
+```
+
+The output shows each tool with its installed skills, tier, and category:
+
+```
+Installed M4 skills:
+
+  ● Claude Code (N skills)
+    └─ apsiii-score                    clinical   validated
+    └─ sofa-score                      clinical   validated
+    └─ m4-api                          system     community
+    ...
 ```
 
 Or look in your project:

@@ -39,6 +39,9 @@ Data exploration and simple research questions work great via MCP. But real rese
 **Cross-dataset research.**
 You should be able to ask for multi-dataset queries or cross-dataset comparisons. M4 makes this easier than ever as the AI can switch between your initialized datasets on its own, allowing it to do cross-dataset tasks for you.
 
+**Interactive exploration.**
+Some research tasks—like cohort definition—benefit from real-time visual feedback rather than iterative text queries. M4 Apps embed purpose-built UIs directly in your AI client, letting you drag sliders, toggle filters, and see instant results without leaving your workflow.
+
 
 ## Quickstart (3 steps)
 
@@ -99,12 +102,12 @@ set_dataset("mimic-iv")
 
 # Get schema as a dict
 schema = get_schema()
-print(schema['tables'])  # ['admissions', 'diagnoses_icd', ...]
+print(schema['tables'])  # ['mimiciv_hosp.admissions', 'mimiciv_hosp.diagnoses_icd', ...]
 
 # Query returns a pandas DataFrame
 df = execute_query("""
     SELECT icd_code, COUNT(*) as n
-    FROM hosp_diagnoses_icd
+    FROM mimiciv_hosp.diagnoses_icd
     GROUP BY icd_code
     ORDER BY n DESC
     LIMIT 10
@@ -127,26 +130,50 @@ See [Code Execution Guide](docs/CODE_EXECUTION.md) for the full API reference an
 
 ## Agent Skills
 
-M4 ships with 17 skills that teach AI coding assistants clinical research patterns. Skills activate automatically when relevant—ask about "SOFA scores" or "sepsis cohorts" and Claude uses validated SQL from MIT-LCP repositories.
+M4 ships with a set of skills that teach AI coding assistants clinical research patterns. Skills activate automatically when relevant—ask about "SOFA scores" or "sepsis cohorts" and Claude uses validated SQL from MIT-LCP repositories.
 
-**Included skills:**
-- **API**: `m4-api` for Python API usage
+For the canonical list of bundled skills, see `src/m4/skills/SKILLS_INDEX.md`.
+
+**Clinical skills:**
 - **Severity Scores**: SOFA, APACHE III, SAPS-II, OASIS, LODS, SIRS
 - **Sepsis**: Sepsis-3 cohort identification, suspected infection
 - **Organ Failure**: KDIGO AKI staging
 - **Measurements**: GCS calculation, baseline creatinine, vasopressor equivalents
 - **Cohort Selection**: First ICU stay identification
-- **Data Quality**: Table relationships, MIMIC-eICU mapping, research pitfalls
+- **Research Methodology**: Common research pitfalls and how to avoid them
+
+**System skills:**
+- **M4 Framework**: Python API usage, research workflow, skill creation guide
+- **Data Structure**: MIMIC-IV table relationships, MIMIC-eICU mapping
 
 **Supported tools:** Claude Code, Cursor, Cline, Codex CLI, Gemini CLI, GitHub Copilot
 
 ```bash
-m4 skills                        # Interactive tool selection
-m4 skills --tools claude,cursor  # Install for specific tools
-m4 skills --list                 # Show installed skills
+m4 skills                                    # Interactive tool and skill selection
+m4 skills --tools claude,cursor              # Install all skills for specific tools
+m4 skills --tools claude --tier validated     # Only validated skills
+m4 skills --tools claude --category clinical  # Only clinical skills
+m4 skills --tools claude --skills sofa-score,m4-api  # Specific skills by name
+m4 skills --list                             # Show installed skills with metadata
 ```
 
 See [Skills Guide](docs/SKILLS.md) for the full list and how to create custom skills.
+
+
+## M4 Apps
+
+M4 Apps bring interactivity to clinical research. Instead of text-only responses, apps render interactive UIs directly in your AI client—ideal for tasks that benefit from real-time visual feedback.
+
+**Cohort Builder**: Define patient cohorts with live filtering. Adjust age ranges, add diagnosis codes, and toggle clinical criteria while watching counts update instantly.
+
+```
+User: Help me build a cohort of elderly diabetic patients
+Claude: [Launches Cohort Builder UI with interactive filters]
+```
+
+M4 Apps require a host that supports the MCP Apps protocol (like Claude Desktop). In other clients, you'll get text-based results instead.
+
+See [M4 Apps Guide](docs/M4_APPS.md) for details on available apps and how they work.
 
 
 ## Example Questions
@@ -159,6 +186,12 @@ Once connected, try asking:
 - *"Find all ICU stays longer than 7 days"*
 - *"What are the most common lab tests?"*
 
+**Derived concept tables (mimic-iv, after `m4 init-derived`):**
+- *"What are the average SOFA scores for patients with sepsis?"*
+- *"Show KDIGO AKI staging distribution across ICU stays"*
+- *"Find patients on norepinephrine with SOFA > 10"*
+- *"What is the 30-day mortality for patients with Charlson index > 5?"*
+
 **Clinical notes (mimic-iv-note):**
 - *"Search for notes mentioning diabetes"*
 - *"List all notes for patient 10000032"*
@@ -167,21 +200,31 @@ Once connected, try asking:
 
 ## Supported Datasets
 
-| Dataset | Modality | Size | Access | Local | BigQuery |
-|---------|----------|------|--------|-------|----------|
-| **mimic-iv-demo** | Tabular | 100 patients | Free | Yes | No |
-| **mimic-iv** | Tabular | 365k patients | [PhysioNet credentialed](https://physionet.org/content/mimiciv/) | Yes | Yes |
-| **mimic-iv-note** | Notes | 331k notes | [PhysioNet credentialed](https://physionet.org/content/mimic-iv-note/) | Yes | Yes |
-| **eicu** | Tabular | 200k+ patients | [PhysioNet credentialed](https://physionet.org/content/eicu-crd/) | Yes | Yes |
+| Dataset | Modality | Size | Access | Local | BigQuery | Derived Tables |
+|---------|----------|------|--------|-------|----------|----------------|
+| **mimic-iv-demo** | Tabular | 100 patients | Free | Yes | No | No |
+| **mimic-iv** | Tabular | 365k patients | [PhysioNet credentialed](https://physionet.org/content/mimiciv/) | Yes | Yes | Yes (63 tables) |
+| **mimic-iv-note** | Notes | 331k notes | [PhysioNet credentialed](https://physionet.org/content/mimic-iv-note/) | Yes | Yes | No |
+| **eicu** | Tabular | 200k+ patients | [PhysioNet credentialed](https://physionet.org/content/eicu-crd/) | Yes | Yes | No |
 
 These datasets are supported out of the box. However, it is possible to add any other custom dataset by following [these instructions](docs/CUSTOM_DATASETS.md).
 
-Switch datasets anytime:
+Switch datasets or backends anytime:
 ```bash
 m4 use mimic-iv     # Switch to full MIMIC-IV
-m4 status           # Show active dataset details
+m4 backend bigquery # Switch to BigQuery (or duckdb)
+m4 status           # Show active dataset and backend
 m4 status --all     # List all available datasets
+m4 status --derived # Show per-table derived materialization status
 ```
+
+**Derived concept tables** (MIMIC-IV only):
+```bash
+m4 init-derived mimic-iv         # Materialize ~63 derived tables (SOFA, sepsis3, KDIGO, etc.)
+m4 init-derived mimic-iv --list  # List available derived tables without materializing
+```
+
+After running `m4 init mimic-iv`, you are prompted whether to materialize derived tables. You can also run `m4 init-derived` separately at any time. Derived tables are created in the `mimiciv_derived` schema (e.g., `mimiciv_derived.sofa`) and are immediately queryable. The SQL is vendored from the [mimic-code](https://github.com/MIT-LCP/mimic-code) repository -- production-tested and DuckDB-compatible. BigQuery users already have these tables available via `physionet-data.mimiciv_derived` and do not need to run `init-derived`.
 
 <details>
 <summary><strong>Setting up MIMIC-IV or eICU (credentialed datasets)</strong></summary>
@@ -242,7 +285,8 @@ M4 exposes these tools to your AI client. Tools are filtered based on the active
 |-------|-------------|
 | [Architecture](docs/ARCHITECTURE.md) | Design philosophy, system overview, clinical semantics |
 | [Code Execution](docs/CODE_EXECUTION.md) | Python API for programmatic access |
-| [Skills](docs/SKILLS.md) | 17 clinical research skills and custom skill creation |
+| [M4 Apps](docs/M4_APPS.md) | Interactive UIs for clinical research tasks |
+| [Skills](docs/SKILLS.md) | Clinical and system skills for AI-assisted research |
 | [Tools Reference](docs/TOOLS.md) | MCP tool documentation |
 | [BigQuery Setup](docs/BIGQUERY.md) | Google Cloud for full datasets |
 | [Custom Datasets](docs/CUSTOM_DATASETS.md) | Add your own PhysioNet datasets |
@@ -276,6 +320,9 @@ m4 init mimic-iv-demo --force
 
 **MCP client won't connect:**
 Check client logs (Claude Desktop: Help → View Logs) and ensure the config JSON is valid.
+
+**`m4` command opens GNU M4 instead of the CLI:**
+On macOS/Linux, `m4` is a built-in system utility. Make sure your virtual environment is activated (`source .venv/bin/activate`) so that the correct `m4` binary is found first. Alternatively, use `uv run m4 [command]` to run within the project environment without activating it.
 
 **Need to reconfigure:**
 ```bash

@@ -61,6 +61,12 @@ class TestDatasetDefinition:
         )
         assert isinstance(ds.modalities, frozenset)
 
+    def test_schema_mapping_defaults_to_empty(self):
+        """Test that schema_mapping defaults to empty dict."""
+        ds = DatasetDefinition(name="test-dataset")
+        assert ds.schema_mapping == {}
+        assert ds.bigquery_schema_mapping == {}
+
 
 class TestDatasetRegistry:
     """Test DatasetRegistry with enhanced datasets."""
@@ -118,11 +124,168 @@ class TestDatasetRegistry:
         DatasetRegistry.reset()
         all_datasets = DatasetRegistry.list_all()
 
-        assert len(all_datasets) >= 3  # At least mimic-demo, mimic-iv, and eicu
+        assert len(all_datasets) >= 4
         names = [ds.name for ds in all_datasets]
         assert "mimic-iv-demo" in names
         assert "mimic-iv" in names
+        assert "mimic-iv-note" in names
         assert "eicu" in names
+
+    def test_mimic_demo_schema_mapping(self):
+        """Test MIMIC-IV demo has correct schema mappings."""
+        DatasetRegistry.reset()
+        ds = DatasetRegistry.get("mimic-iv-demo")
+        assert ds.schema_mapping == {"hosp": "mimiciv_hosp", "icu": "mimiciv_icu"}
+        assert ds.bigquery_schema_mapping == {}
+        assert ds.primary_verification_table == "mimiciv_hosp.admissions"
+
+    def test_mimic_iv_schema_mapping(self):
+        """Test MIMIC-IV has correct schema and BigQuery mappings."""
+        DatasetRegistry.reset()
+        ds = DatasetRegistry.get("mimic-iv")
+        assert ds.schema_mapping == {
+            "hosp": "mimiciv_hosp",
+            "icu": "mimiciv_icu",
+            "derived": "mimiciv_derived",
+        }
+        assert ds.bigquery_schema_mapping == {
+            "mimiciv_hosp": "mimiciv_3_1_hosp",
+            "mimiciv_icu": "mimiciv_3_1_icu",
+            "mimiciv_derived": "mimiciv_derived",
+        }
+        assert ds.primary_verification_table == "mimiciv_hosp.admissions"
+        assert "mimiciv_derived" in ds.bigquery_dataset_ids
+
+    def test_mimic_iv_note_schema_mapping(self):
+        """Test MIMIC-IV Note has correct schema mappings."""
+        DatasetRegistry.reset()
+        ds = DatasetRegistry.get("mimic-iv-note")
+        assert ds.schema_mapping == {"note": "mimiciv_note"}
+        assert ds.bigquery_schema_mapping == {"mimiciv_note": "mimiciv_note"}
+        assert ds.primary_verification_table == "mimiciv_note.discharge"
+
+    def test_eicu_schema_mapping(self):
+        """Test eICU has correct schema mappings with empty-string key."""
+        DatasetRegistry.reset()
+        ds = DatasetRegistry.get("eicu")
+        assert ds.schema_mapping == {"": "eicu_crd"}
+        assert ds.bigquery_schema_mapping == {"eicu_crd": "eicu_crd"}
+        assert ds.primary_verification_table == "eicu_crd.patient"
+
+
+class TestDatasetRegistryEdgeCases:
+    """Test registry edge cases that could cause silent data loss or crashes."""
+
+    def test_register_overwrites_existing(self):
+        """Registering a dataset with an existing name overwrites the old one.
+
+        This is important because custom datasets could shadow built-in ones.
+        """
+        DatasetRegistry.reset()
+        original = DatasetRegistry.get("mimic-iv-demo")
+        assert original is not None
+
+        replacement = DatasetDefinition(
+            name="mimic-iv-demo",
+            description="Overwritten",
+            modalities=frozenset({Modality.NOTES}),
+        )
+        DatasetRegistry.register(replacement)
+
+        retrieved = DatasetRegistry.get("mimic-iv-demo")
+        assert retrieved.description == "Overwritten"
+        assert Modality.NOTES in retrieved.modalities
+
+        # Clean up
+        DatasetRegistry.reset()
+
+    def test_reset_restores_builtins(self):
+        """reset() clears custom datasets and restores all built-ins."""
+        DatasetRegistry.register(
+            DatasetDefinition(name="ephemeral-custom", modalities=frozenset())
+        )
+        assert DatasetRegistry.get("ephemeral-custom") is not None
+
+        DatasetRegistry.reset()
+        assert DatasetRegistry.get("ephemeral-custom") is None
+        assert DatasetRegistry.get("mimic-iv-demo") is not None
+        assert DatasetRegistry.get("eicu") is not None
+
+    def test_get_nonexistent_returns_none(self):
+        """get() returns None for unknown dataset names."""
+        DatasetRegistry.reset()
+        assert DatasetRegistry.get("nonexistent-dataset-xyz") is None
+
+    def test_get_active_no_config_raises(self, monkeypatch):
+        """get_active() raises DatasetError when no dataset is configured."""
+        import pytest
+
+        import m4.config as cfg
+        from m4.core.exceptions import DatasetError
+
+        monkeypatch.setattr(cfg, "get_active_dataset", lambda: None)
+
+        with pytest.raises(DatasetError, match="No active dataset"):
+            DatasetRegistry.get_active()
+
+    def test_get_active_unknown_dataset_raises(self, monkeypatch):
+        """get_active() raises DatasetError when config points to unknown dataset."""
+        import pytest
+
+        import m4.config as cfg
+        from m4.core.exceptions import DatasetError
+
+        monkeypatch.setattr(cfg, "get_active_dataset", lambda: "no-such-dataset")
+
+        with pytest.raises(DatasetError, match="not found in registry"):
+            DatasetRegistry.get_active()
+
+    def test_custom_json_oversized_file_skipped(self, tmp_path):
+        """JSON files exceeding MAX_DATASET_FILE_SIZE are skipped."""
+        from m4.core.datasets import MAX_DATASET_FILE_SIZE
+
+        big_file = tmp_path / "huge.json"
+        big_file.write_text("x" * (MAX_DATASET_FILE_SIZE + 1))
+
+        DatasetRegistry.reset()
+        DatasetRegistry.load_custom_datasets(tmp_path)
+        # The oversized file should not crash and should not register anything
+        assert DatasetRegistry.get("huge") is None
+
+    def test_custom_json_with_schema_mapping(self, tmp_path):
+        """Custom JSON with schema_mapping fields loads correctly."""
+        json_data = {
+            "name": "custom-mapped",
+            "schema_mapping": {"hosp": "custom_hosp"},
+            "bigquery_schema_mapping": {"custom_hosp": "custom_bq_hosp"},
+        }
+        (tmp_path / "mapped.json").write_text(json.dumps(json_data))
+
+        DatasetRegistry.reset()
+        DatasetRegistry.load_custom_datasets(tmp_path)
+
+        ds = DatasetRegistry.get("custom-mapped")
+        assert ds is not None
+        assert ds.schema_mapping == {"hosp": "custom_hosp"}
+        assert ds.bigquery_schema_mapping == {"custom_hosp": "custom_bq_hosp"}
+
+        DatasetRegistry.reset()
+
+    def test_load_custom_datasets_nonexistent_dir(self, tmp_path):
+        """load_custom_datasets with nonexistent directory does not crash."""
+        DatasetRegistry.reset()
+        DatasetRegistry.load_custom_datasets(tmp_path / "nonexistent")
+        # Should not raise, just return silently
+        assert DatasetRegistry.get("mimic-iv-demo") is not None
+
+    def test_load_custom_datasets_malformed_json(self, tmp_path):
+        """Malformed JSON files are skipped gracefully."""
+        (tmp_path / "bad.json").write_text("{invalid json!!!}")
+
+        DatasetRegistry.reset()
+        DatasetRegistry.load_custom_datasets(tmp_path)
+        # Should not crash; malformed file is simply skipped
+        assert DatasetRegistry.get("mimic-iv-demo") is not None
 
 
 class TestJSONLoading:
