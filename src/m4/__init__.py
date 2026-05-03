@@ -32,11 +32,14 @@ from m4.api import (
     get_note,
     get_schema,
     get_table_info,
+    # Telemetry
+    get_telemetry_path,
     list_datasets,
     list_patient_notes,
     search_notes,
     set_dataset,
 )
+from m4.core.telemetry import set_agent_id
 
 __all__ = [
     "DatasetError",
@@ -49,9 +52,11 @@ __all__ = [
     "get_note",
     "get_schema",
     "get_table_info",
+    "get_telemetry_path",
     "list_datasets",
     "list_patient_notes",
     "search_notes",
+    "set_agent_id",
     "set_dataset",
     "show",
 ]

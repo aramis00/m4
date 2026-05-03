@@ -26,6 +26,7 @@ that work on both DuckDB and BigQuery backends. Use set_dataset()
 to switch between datasets.
 """
 
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -34,6 +35,7 @@ from m4.config import get_active_dataset as _get_active_dataset
 from m4.config import set_active_dataset as _set_active_dataset
 from m4.core.datasets import DatasetRegistry
 from m4.core.exceptions import DatasetError, M4Error, ModalityError, QueryError
+from m4.core.telemetry import invoke_tracked, set_interface
 from m4.core.tools import ToolRegistry, ToolSelector, init_tools
 from m4.core.tools.notes import (
     GetNoteInput,
@@ -48,6 +50,7 @@ from m4.core.tools.tabular import (
 
 # Initialize tools on module import
 init_tools()
+set_interface("python_api")
 
 # Tool selector for compatibility checking
 _tool_selector = ToolSelector()
@@ -63,6 +66,7 @@ __all__ = [
     "get_note",
     "get_schema",
     "get_table_info",
+    "get_telemetry_path",
     "list_datasets",
     "list_patient_notes",
     "search_notes",
@@ -152,7 +156,7 @@ def get_schema() -> dict[str, Any]:
     """
     dataset = DatasetRegistry.get_active()
     tool = ToolRegistry.get("get_database_schema")
-    return tool.invoke(dataset, GetDatabaseSchemaInput())
+    return invoke_tracked(tool, dataset, GetDatabaseSchemaInput())
 
 
 def get_table_info(table_name: str, show_sample: bool = True) -> dict[str, Any]:
@@ -179,8 +183,8 @@ def get_table_info(table_name: str, show_sample: bool = True) -> dict[str, Any]:
     """
     dataset = DatasetRegistry.get_active()
     tool = ToolRegistry.get("get_table_info")
-    return tool.invoke(
-        dataset, GetTableInfoInput(table_name=table_name, show_sample=show_sample)
+    return invoke_tracked(
+        tool, dataset, GetTableInfoInput(table_name=table_name, show_sample=show_sample)
     )
 
 
@@ -206,7 +210,7 @@ def execute_query(sql: str) -> pd.DataFrame:
     """
     dataset = DatasetRegistry.get_active()
     tool = ToolRegistry.get("execute_query")
-    return tool.invoke(dataset, ExecuteQueryInput(sql_query=sql))
+    return invoke_tracked(tool, dataset, ExecuteQueryInput(sql_query=sql))
 
 
 # =============================================================================
@@ -261,7 +265,8 @@ def search_notes(
 
     dataset = DatasetRegistry.get_active()
     tool = ToolRegistry.get("search_notes")
-    return tool.invoke(
+    return invoke_tracked(
+        tool,
         dataset,
         SearchNotesInput(
             query=query,
@@ -300,7 +305,8 @@ def get_note(note_id: str, max_length: int | None = None) -> dict[str, Any]:
 
     dataset = DatasetRegistry.get_active()
     tool = ToolRegistry.get("get_note")
-    return tool.invoke(
+    return invoke_tracked(
+        tool,
         dataset,
         GetNoteInput(note_id=note_id, max_length=max_length),
     )
@@ -337,7 +343,8 @@ def list_patient_notes(
 
     dataset = DatasetRegistry.get_active()
     tool = ToolRegistry.get("list_patient_notes")
-    return tool.invoke(
+    return invoke_tracked(
+        tool,
         dataset,
         ListPatientNotesInput(
             subject_id=subject_id,
@@ -345,3 +352,25 @@ def list_patient_notes(
             limit=limit,
         ),
     )
+
+
+# =============================================================================
+# Telemetry
+# =============================================================================
+
+
+def get_telemetry_path() -> Path:
+    """Return the path to the telemetry JSONL file.
+
+    This file contains one JSON record per line, with each record
+    representing a tool invocation (see ToolCallRecord for schema).
+    External systems can read this file to build provenance trails.
+
+    Returns:
+        Path to the tool_calls.jsonl file (may not exist if no
+        calls have been made yet, or if M4_TELEMETRY=off).
+    """
+    from m4.config import get_telemetry_dir
+    from m4.core.telemetry import TELEMETRY_FILENAME
+
+    return get_telemetry_dir() / TELEMETRY_FILENAME
