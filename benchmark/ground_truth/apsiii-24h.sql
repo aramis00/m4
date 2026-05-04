@@ -37,8 +37,13 @@ WITH pa AS (
     AND bg.charttime <= vd.endtime
     AND vd.ventilation_status = 'InvasiveVent'
   WHERE
-    vd.stay_id IS NULL
-    AND COALESCE(fio2, fio2_chartevents, 21) < 50
+    -- FIX (2026-05-04): per Knaus 1991 Fig. 1 (van Valburg 2024 Suppl.),
+    -- PaO2 is used for non-intubated patients OR intubated patients with
+    -- FiO2 < 0.5. Previously this clause was AND, which excluded both
+    -- (vented + FiO2 < 50%) and (non-vented + FiO2 >= 50%) from PaO2
+    -- scoring; both groups should use PaO2.
+    (vd.stay_id IS NULL
+     OR COALESCE(fio2, fio2_chartevents, 21) < 50)
     AND NOT bg.po2 IS NULL
     AND bg.specimen = 'ART.'
 ), aa AS (
@@ -301,7 +306,12 @@ WITH pa AS (
     CASE
       WHEN resp_rate_min IS NULL
       THEN NULL
-      WHEN vent = 1 AND resp_rate_min < 14
+      -- FIX (2026-05-04): per Knaus 1991 Fig. 1 (van Valburg 2024 Suppl.),
+      -- the vent exception applies only to RR 6-12 ("no points are given
+      -- for respiratory rates of 6-12"). Previously the condition was
+      -- `< 14`, which incorrectly zeroed RR <=5 (apnea, should score 17)
+      -- and RR=13 (should score 7).
+      WHEN vent = 1 AND resp_rate_min >= 6 AND resp_rate_min < 13
       THEN 0
       WHEN resp_rate_min < 6
       THEN 17
@@ -495,7 +505,9 @@ WITH pa AS (
     CASE
       WHEN resp_rate_max IS NULL
       THEN NULL
-      WHEN vent = 1 AND resp_rate_max < 14
+      -- FIX (2026-05-04): vent exception narrowed to RR 6-12 (see
+      -- score_min comment).
+      WHEN vent = 1 AND resp_rate_max >= 6 AND resp_rate_max < 13
       THEN 0
       WHEN resp_rate_max < 6
       THEN 17

@@ -20,13 +20,21 @@ reviews:
         simplification, internally consistent with ground-truth SQL.
 
       ## skills/apsiii-score/SKILL.md
+      - **2026-05-04 update**: SKILL.md restructured to include explicit
+        scoring tables for all 16 components (per team agreement to put
+        the actual scoring logic in the task SKILL.md). Tables reproduce
+        van Valburg 2024 Suppl. 2 (APACHE-III APS calculation reference)
+        verbatim, including the acid–base pH × pCO₂ matrix and the GCS
+        eyes/motor/verbal interaction tables. Same content applied to
+        skills-nosql/apsiii-score/SKILL.md and to both standard and raw
+        task variants (4 files identical).
       - Score components, normal reference values, and procedural notes
         match published APS-III.
       - Benchmark-safe subset of the production skill at
         src/m4/skills/clinical/apsiii-score (precomputed-table examples
         removed, "M4Bench Use" note added).
-      - Axillary-temperature correction not implemented (acknowledged in
-        SKILL.md note 6).
+      - Axillary-temperature correction not implemented (note documented
+        in the Temperature scoring table).
 
       ## ground-truth SQL (also served verbatim as the skills-rawsql variant)
       Deviations from mimic-code, already documented in SQL header as acceptable:
@@ -43,19 +51,28 @@ reviews:
           N18.4-N18.6 (CKD stage 4 through ESRD); stricter than Knaus's
           "chronic dialysis" criterion but clinically defensible.
 
-      Discrepancies vs. Knaus 1991, likely inherited from mimic-code; for
-      project leadership to evaluate against the existing "correct
-      mimic-code" policy:
-        1. Respiratory rate in ventilated patients: SQL applies
-           `vent = 1 AND resp_rate < 14 -> 0` as a blanket override, but
-           per Knaus 1991 Fig. 1 the exception applies only to RR 6-12.
-           Vented patients with RR <=5 score 0 (literal Knaus: 17 -
-           apnea/oversedation) and RR=13 scores 0 (literal Knaus: 7).
-        2. PaO2 vs A-aDO2 selection: (vented + FiO2 <50%) and
-           (non-vented + FiO2 >=50%) fall into neither pathway,
-           producing NULL -> COALESCE'd to 0. Per Knaus, both groups
-           should use PaO2. Systematically under-scores oxygenation
-           in those subgroups.
+      Discrepancies vs. Knaus 1991 (mimic-code-inherited) — **FIXED
+      2026-05-04 in this PR**:
+        1. **Respiratory rate in ventilated patients (FIXED)**:
+           previously `vent = 1 AND resp_rate < 14 -> 0` (blanket
+           override); now `vent = 1 AND resp_rate >= 6 AND resp_rate < 13
+           -> 0`, narrowing the exception to RR 6-12 per Knaus 1991
+           Fig. 1 / van Valburg 2024 Suppl. Vented patients with RR ≤5
+           now correctly score 17 (apnea), and RR=13 now correctly
+           scores 7.
+        2. **PaO2 vs A-aDO2 selection (FIXED)**: previously the pa CTE
+           used `vd.stay_id IS NULL AND FiO2 < 50%`, which excluded both
+           (vented + FiO2 <50%) and (non-vented + FiO2 ≥50%) from the
+           PaO2 pathway. Now `vd.stay_id IS NULL OR FiO2 < 50%`, which
+           correctly routes those groups to PaO2 per Knaus / van Valburg.
+        Fixes applied to ground-truth SQL (benchmark/ground_truth/
+        apsiii-24h.sql) and to both skills-rawsql verbatim copies
+        (mimic-apsiii-24h and mimic-apsiii-24h-raw). The production
+        skill SQL (src/m4/skills/clinical/apsiii-score/scripts/apsiii.sql)
+        is **not** updated in this PR; benchmark and production skill
+        SQL now diverge on these two fixes. To restore alignment, the
+        production skill should be updated to match in a separate PR.
+
 references:
   - "Knaus WA, Wagner DP, Draper EA, et al. The APACHE III prognostic system: risk prediction of hospital mortality for critically ill hospitalized adults. Chest. 1991;100(6):1619-1636."
   - "van Valburg MK, et al. Predicting 30-day mortality in intensive care unit patients with ischaemic stroke and intracerebral haemorrhage. Eur J Anaesthesiol. 2024;41(2):105-113."
@@ -64,3 +81,6 @@ changelog:
   - version: "1.0"
     date: 2026-05-03
     summary: Initial clinical-accuracy review of APS-III benchmark task.
+  - version: "1.1"
+    date: 2026-05-04
+    summary: Applied two fixes to ground-truth SQL and both skills-rawsql verbatim copies — RR-vent rule narrowed to RR 6-12 per Knaus 1991 Fig. 1; PaO2 selection clause changed from AND to OR to close gaps for (vented + FiO2 <50%) and (non-vented + FiO2 ≥50%) per van Valburg 2024 Suppl. Restructured the procedural skills/apsiii-score/SKILL.md (and skills-nosql copies) with explicit scoring tables for all 16 components reproducing van Valburg 2024 Suppl. 2.
