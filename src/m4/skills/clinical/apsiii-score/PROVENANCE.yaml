@@ -1,0 +1,67 @@
+sources:
+  - url: https://github.com/MIT-LCP/mimic-code/tree/main/mimic-iv/concepts/score
+    description: MIT-LCP mimic-code APACHE III implementation
+    license: Apache-2.0
+
+created:
+  by: m4-clinical-extraction
+  role: clinical-extraction
+  date: 2026-01-11
+
+reviews:
+  - by: Ahram Han, MD
+    date: 2026-05-03
+    scope: clinical-accuracy
+    notes: |
+      Cross-checked against the APS-III scoring table in van Valburg 2024
+      (Suppl.); discrepancies traced back to Knaus 1991. Restructured
+      SKILL.md per the sapsii-score template: component table, Dataset
+      Availability section with MIMIC-IV/eICU subsections, dataset-
+      specific implementation details and limitations. Pre-computed
+      Table block merged under MIMIC-IV Dataset Availability.
+
+      No SQL changes in this pass; the items below are deferred to a
+      project-policy decision.
+
+      Class A — corrections already applied in benchmark/ground_truth/
+      apsiii-24h.sql but NOT in this production scripts/apsiii.sql.
+      Propagation pending decision on clinical accuracy vs. BigQuery
+      `physionet-data.mimiciv_derived.apsiii` parity:
+        (a) Blood-gas time window: cap at first 24h via
+            LEAST(outtime, intime + 1 day). Production currently uses
+            entire ICU stay.
+        (b) "Worst from normal" tiebreaker: fix self-comparison bug
+            for 6 variables (resp_rate, hematocrit, wbc, sodium,
+            albumin, glucose). mimic-code compares ABS(x_max - mid)
+            to itself; should compare to ABS(x_min - mid).
+
+      Class B — discrepancies vs. Knaus 1991 present in BOTH this
+      production SQL and benchmark ground truth; coordinated fix
+      required (fixing only one side mis-aligns benchmark scoring):
+        1. Respiratory rate in ventilated patients: SQL applies
+           `vent = 1 AND resp_rate < 14 -> 0` as a blanket override,
+           but per Knaus 1991 Fig. 1 the exception applies only to
+           RR 6-12. Vented patients with RR <=5 score 0 (literal
+           Knaus: 17 - apnea/oversedation) and RR=13 scores 0
+           (literal Knaus: 7).
+        2. PaO2 vs A-aDO2 selection: (vented + FiO2 <50%) and
+           (non-vented + FiO2 >=50%) fall into neither pathway,
+           producing NULL pao2_aado2_score. Per Knaus, both groups
+           should use PaO2.
+
+      Note: most APS-III scoring tables circulating online derive from
+      mimic-code rather than Knaus 1991 directly, so these
+      discrepancies are not unique to this skill.
+
+references:
+  - "Knaus WA, Wagner DP, Draper EA, et al. The APACHE III prognostic system: risk prediction of hospital mortality for critically ill hospitalized adults. Chest. 1991;100(6):1619-1636."
+  - "Johnson AEW. Mortality prediction and acuity assessment in critical care. University of Oxford. 2015."
+  - "van Valburg MK, et al. Predicting 30-day mortality in intensive care unit patients with ischaemic stroke and intracerebral haemorrhage. Eur J Anaesthesiol. 2024;41(2):105-113."
+
+changelog:
+  - version: "1.0"
+    date: 2026-01-11
+    summary: Initial extraction from mimic-code
+  - version: "1.1"
+    date: 2026-05-03
+    summary: Added PROVENANCE.yaml; restructured SKILL.md with Score Components table and Dataset Availability section (MIMIC-IV/eICU); documented discrepancies vs. Knaus 1991 (deferred for project-policy decision).

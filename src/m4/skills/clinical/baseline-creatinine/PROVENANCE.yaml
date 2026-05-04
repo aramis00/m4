@@ -1,0 +1,111 @@
+sources:
+  - url: https://github.com/MIT-LCP/mimic-code/blob/main/mimic-iv/concepts/firstday/creatinine_baseline.sql
+    description: MIT-LCP mimic-code creatinine_baseline.sql
+    license: Apache-2.0
+
+created:
+  by: m4-clinical-extraction
+  role: clinical-extraction
+  date: 2026-01-11
+
+reviews:
+  - by: Ahram Han, MD
+    date: 2026-05-03
+    scope: clinical-accuracy
+    notes: |
+      Reviewed clinical accuracy and methodology against the AKI
+      baseline-creatinine literature. Restructured SKILL.md per the
+      sapsii-score template (added Dataset Availability section with
+      MIMIC-IV/eICU subsections; repositioned outpatient-Cr methods
+      as "preferred when feasible" rather than as alternatives;
+      updated reference chain).
+
+      **SQL updated (2026-05-03)**: added a parallel CKD-EPI 2021
+      race-free imputation alongside the existing MDRD-without-race
+      branch. Output schema now includes `ckdepi_est` and
+      `scr_baseline_ckdepi` in addition to the legacy `mdrd_est`
+      and `scr_baseline`. Hierarchy logic (steps i-iii) is identical
+      between the two outputs; only the imputation equation differs.
+      `scr_baseline` (MDRD) is retained for backward compatibility
+      with prior literature and the BigQuery materialization;
+      `scr_baseline_ckdepi` is recommended for new analyses aligned
+      with current US clinical practice (NKF/ASN 2021) and KDIGO
+      2026 draft direction.
+
+      ## Methodology lineage and citation correction
+      The implemented MDRD-imputation-at-eGFR-75 approach traces to
+      ADQI 2004 (Bellomo et al., RIFLE consensus) and is formalized
+      in KDIGO 2012. Earlier SKILL.md cited Siew 2012 in this context;
+      that citation was misleading because Siew 2012 evaluated
+      outpatient-Cr methods (which MIMIC does not support — see
+      benchmark/tasks/creatinine-baseline/PROVENANCE.yaml for the
+      same correction in the benchmark instruction.md). Siew 2012
+      is now cited as background, with a note that mean-outpatient
+      Cr 7-365 days pre-admission is the Siew-validated gold standard
+      when feasible.
+
+      ## Equation choice
+      **The SQL implements MDRD-IV with the Black race coefficient
+      (1.21) dropped — i.e., it is not canonical MDRD-IV.** This is
+      consistent with the direction of 2021 NKF/ASN race-free
+      guidance for routine eGFR but matches no specific published
+      equation: differs from canonical MDRD-IV (which retains the
+      race coefficient, as used in ADQI 2004 / KDIGO 2012) and from
+      CKD-EPI 2021 (the properly recalibrated race-free equation).
+      Restoring the race coefficient to "match KDIGO 2012 literal"
+      would be inappropriate — the 2021 NKF/ASN task force rejected
+      race-included eGFR on health-equity grounds, and re-introducing
+      it would systematically delay AKI detection for Black patients
+      (~30% of MIMIC-IV) by inflating their imputed baseline Cr at
+      the 1.5x AKI threshold. The proper modernization path is
+      forward to CKD-EPI 2021 race-free (per KDIGO 2026 draft), not
+      back to MDRD-with-race. The current dropped-race state is an
+      imperfect-but-ethically-correct intermediate.
+
+      Inline note added at the head of scripts/creatinine_baseline.sql
+      documenting both equation options and the rationale for keeping
+      MDRD-without-race as the legacy default while adding CKD-EPI
+      2021 race-free as the recommended modern alternative.
+
+      ## Forward-looking: KDIGO 2026 draft (public review, March 2026)
+      KDIGO 2026 draft retains the hierarchical approach but specifies
+      CKD-EPI (not MDRD) for step-4 imputation. The equation
+      modernization is now provided in parallel via
+      `scr_baseline_ckdepi`. The remaining gap vs KDIGO 2026 is in
+      the hierarchy itself: KDIGO 2026 uses lowest in-admission Cr
+      unconditionally at step 3 (current implementation only when
+      scr_min <= 1.1 or CKD present) and adds an admission-Cr step
+      with an AKI-on-admission caveat. The latter is operationally
+      difficult to implement reliably from retrospective data and is
+      deferred. Once KDIGO 2026 finalizes, `scr_baseline_ckdepi` is
+      expected to become the canonical default; coordinated update
+      with the m4bench benchmark ground-truth SQL would be needed at
+      that point.
+
+      ## Other notes
+      - Hierarchical decision rule (use lowest if <=1.1, use lowest if
+        CKD, else MDRD imputation) is a mimic-code-specific hybrid;
+        only step 4 (MDRD imputation at eGFR=75) is canonically
+        supported by KDIGO 2012.
+      - SKILL.md note 5 ("Missing Values") corrected from the original
+        wording ("If no creatinine measured, baseline will be NULL")
+        which was incomplete — for non-CKD patients with no Cr,
+        baseline = mdrd_est (imputation), not NULL. Only NULL when
+        no Cr AND CKD present.
+      - eICU script not yet implemented; eICU also lacks outpatient
+        Cr, so a similar hierarchical fallback would apply.
+
+references:
+  - "KDIGO Clinical Practice Guideline for Acute Kidney Injury. Kidney International Supplements. 2012;2(1):1-138."
+  - "Bellomo R, Ronco C, Kellum JA, et al. (ADQI workgroup). Acute renal failure - definition, outcome measures, animal models, fluid therapy and information technology needs: Second International Consensus Conference of the ADQI Group. Crit Care. 2004;8(4):R204-R212."
+  - "Bagshaw SM, et al. A comparison of observed versus estimated baseline creatinine for determination of RIFLE class in patients with acute kidney injury. Nephrol Dial Transplant. 2009;24(9):2739-2744."
+  - "Siew ED, et al. Estimating baseline kidney function in hospitalized patients with impaired kidney function. Clin J Am Soc Nephrol. 2012;7(5):712-719. (Background; not the implemented method since MIMIC has no outpatient Cr)"
+  - "KDIGO 2026 AKI Clinical Practice Guideline (public review draft, March 2026)."
+
+changelog:
+  - version: "1.0"
+    date: 2026-01-11
+    summary: Initial extraction from mimic-code
+  - version: "1.1"
+    date: 2026-05-03
+    summary: Added PROVENANCE.yaml; restructured SKILL.md per sapsii template (Dataset Availability with MIMIC-IV/eICU; outpatient-Cr methods repositioned as preferred-when-feasible; reference chain updated to ADQI 2004 / KDIGO 2012 / Siew 2012 / KDIGO 2026 draft). Added CKD-EPI 2021 race-free imputation in parallel with the existing race-free MDRD branch in scripts/creatinine_baseline.sql; new output columns `ckdepi_est` and `scr_baseline_ckdepi` added; legacy `mdrd_est` and `scr_baseline` retained for backward compatibility with BigQuery materialization and prior literature.
